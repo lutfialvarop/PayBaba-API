@@ -20,23 +20,22 @@ const QWEN_SYSTEM_PROMPT = `
 You are Qwen, an AI Credit Intelligence Assistant operating inside a Payment Gateway ecosystem.
 
 Your role:
-- Translate transaction data into credit readiness insights
-- Explain strengths, risks, and cashflow behavior
-- Provide timing intelligence for business financing activities
-- Support decision-making, NOT decision-taking
+•⁠  ⁠Explain transaction and cashflow patterns
+•⁠  ⁠Provide timing intelligence for business financing activities
+•⁠  ⁠Support decision-making, NOT decision-taking
 
 Strict limitations:
-- Do NOT approve or reject loans
-- Do NOT determine credit eligibility
-- Do NOT mention interest rates, tenors, or legal decisions
-- Do NOT provide financial guarantees
+•⁠  ⁠Do NOT approve or reject loans
+•⁠  ⁠Do NOT determine credit eligibility
+•⁠  ⁠Do NOT mention interest rates, limits, exposure, or financing amounts
+•⁠  ⁠Do NOT provide financial guarantees
 
 Principles:
-- Use neutral, professional, and informative language
-- Focus only on transaction behavior, revenue stability, and operational risk
-- Be concise, explainable, and structured
+•⁠  ⁠Use neutral, professional, and informative language
+•⁠  ⁠Focus only on transaction behavior and cashflow stability
+•⁠  ⁠Be concise, explainable, and structured
 
-All responses must be factual and based only on provided data.
+All responses must be factual and based only on the provided data.
 `;
 
 /* =====================================================
@@ -128,12 +127,38 @@ Output MUST be valid JSON:
 
         return JSON.parse(jsonMatch[0]);
     } catch (error) {
-        logger.error(`Qwen Credit Insight Error: ${error.message}`);
+        logger.warn(`Qwen API failed (${error.message}), using fallback explanation`);
+
+        // Generate smart fallback explanation based on credit data
+        const { creditScore, riskBand, transactionVolumeScore, revenueConsistencyScore, growthTrendScore, refundRateScore, avgMonthlyRevenue } = scoreData || {};
+
+        // Build strengths based on scores
+        const strengths = [];
+        if (transactionVolumeScore > 75) strengths.push("Volume transaksi yang solid");
+        if (revenueConsistencyScore > 75) strengths.push("Stabilitas revenue yang konsisten");
+        if (growthTrendScore > 70) strengths.push("Trend pertumbuhan positif");
+        if (refundRateScore > 80) strengths.push("Tingkat refund yang rendah");
+        if (strengths.length === 0) strengths.push("Aktivitas transaksi terdeteksi");
+
+        // Build risk factors based on scores
+        const riskFactors = [];
+        if (transactionVolumeScore < 50) riskFactors.push("Volume transaksi masih terbatas");
+        if (revenueConsistencyScore < 60) riskFactors.push("Fluktuasi revenue cukup tinggi");
+        if (refundRateScore < 70) riskFactors.push("Tingkat refund perlu diperhatikan");
+        if (riskFactors.length === 0) riskFactors.push("Data historis sedang diakumulasi");
+
         return {
-            summary: "Skor dihitung menggunakan credit intelligence layer berbasis transaksi.",
-            strengths: ["Aktivitas transaksi terdeteksi"],
-            risk_factors: ["Data historis masih terbatas"],
-            improvement_suggestion: "Tingkatkan konsistensi transaksi dan minimalkan refund.",
+            explanation: `Skor kredit Anda mencapai ${creditScore}/100 dengan kategori ${riskBand} Risk. Berdasarkan analisis data transaksi, merchant ini menunjukkan aktivitas pembayaran terukur dengan rata-rata revenue bulanan Rp ${avgMonthlyRevenue?.toLocaleString("id-ID") || "N/A"}. Profil ini dibangun dari evaluasi mendalam terhadap volume transaksi, konsistensi revenue, dan perilaku penyelesaian pembayaran.`,
+            recommendation: `${
+                creditScore >= 80
+                    ? "Skor ini menunjukkan profil kreditworthiness yang baik. Pertahankan konsistensi transaksi dan terus tingkatkan volume untuk membuka akses ke produk pembiayaan yang lebih komprehensif."
+                    : creditScore >= 60
+                      ? "Profil kreditworthiness sudah mulai terbentuk dengan baik. Fokus pada peningkatan stabilitas revenue dan pengurangan tingkat refund untuk menaikkan skor kredit."
+                      : "Lanjutkan aktivitas transaksi rutin dan bangun histori data yang lebih stabil untuk meningkatkan skor kredit Anda."
+            }`,
+            strengths,
+            risk_factors: riskFactors,
+            improvement_suggestion: "Tingkatkan konsistensi transaksi harian dan pertahankan refund rate di bawah 5% untuk meningkatkan peluang persetujuan pinjaman.",
         };
     }
 }
@@ -196,28 +221,33 @@ export async function generateLoanTiming(merchantData) {
         const prompt = `
 CASHFLOW TIMING ANALYSIS (TRANSACTION-BASED)
 
+Context:
+This analysis is ONLY to identify the healthiest time window for business financing
+based on historical cashflow patterns.
+It is NOT a credit decision and MUST NOT include any financing amount, limit, or eligibility.
+
 Merchant ID: ${merchantId}
 
-Revenue Overview:
-- Average Monthly Revenue: Rp ${avgMonthlyRevenue.toLocaleString("id-ID")}
-- Revenue Volatility: ${volatility} %
-- Transaction Pattern Summary: ${pattern}
+Revenue Summary:
+•⁠  ⁠Average Monthly Revenue: Rp ${avgMonthlyRevenue.toLocaleString("id-ID")}
+•⁠  ⁠Revenue Volatility: ${volatility} %
+•⁠  ⁠Transaction Pattern: ${pattern}
 
-Daily Revenue (Last 30 Days):
+Daily Revenue Data (Last 30 Days):
 [${dailyRevenues.join(", ")}]
 
 Tasks:
-1. Select the healthiest week of the month (1–4) from a cashflow perspective.
-2. Provide a confidence score (0–100).
-3. Explain reasoning based on revenue stability and transaction risk.
-4. Express the timing in a human-readable date range.
+1.⁠ ⁠Select the healthiest week of the month (1–4) purely from a cashflow stability perspective.
+2.⁠ ⁠Provide a confidence score from 0 to 100.
+3.⁠ ⁠Explain the reasoning briefly using observed patterns (stability, consistency, volatility).
+4.⁠ ⁠Provide a human-readable date range for the recommended week.
 
-Rules:
-- Do NOT approve or reject loans.
-- Do NOT provide credit decisions.
-- Focus only on timing and cashflow health.
+STRICT OUTPUT RULES:
+•⁠  ⁠DO NOT include any financing amount, limit, exposure, or monetary value.
+•⁠  ⁠DO NOT include approval, rejection, or eligibility language.
+•⁠  ⁠DO NOT add any extra fields beyond those requested.
 
-Output MUST be valid JSON:
+Output MUST be valid JSON with EXACTLY this structure and NO additional fields:
 {
   "recommended_week": 1,
   "confidence": 0,
@@ -243,18 +273,25 @@ Output MUST be valid JSON:
             return {
                 recommended_week: 2,
                 confidence: 60,
-                reasoning: "Rekomendasi berbasis pola transaksi historis.",
+                reasoning: "Rekomendasi berbasis pola transaksi historis dan stabilitas arus kas.",
                 date_range: "Minggu ke-2 bulan berikutnya",
             };
         }
 
-        return JSON.parse(jsonMatch[0]);
+        const parsed = JSON.parse(jsonMatch[0]);
+
+        return {
+            recommended_week: parsed.recommended_week,
+            confidence: parsed.confidence,
+            reasoning: parsed.reasoning,
+            date_range: parsed.date_range,
+        };
     } catch (error) {
         logger.error(`Qwen Loan Timing Error: ${error.message}`);
         return {
             recommended_week: 2,
             confidence: 50,
-            reasoning: "Gunakan rekomendasi default berbasis cashflow.",
+            reasoning: "Gunakan rekomendasi default berbasis stabilitas cashflow.",
             date_range: "Minggu ke-2 bulan berikutnya",
         };
     }

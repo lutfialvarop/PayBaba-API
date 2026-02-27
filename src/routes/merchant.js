@@ -211,37 +211,35 @@ router.get("/credit-detail", authenticateToken, async (req, res, next) => {
             });
         }
 
-        // Generate AI explanation if not already exists
-        let explanation = latestScore.qwenExplanation;
-        let recommendation = latestScore.qwenRecommendation;
+        // Generate fresh AI explanation every time
+        let explanation;
+        let recommendation;
 
-        if (!explanation || !recommendation) {
-            try {
-                const aiResponse = await generateScoreExplanation({
-                    creditScore: latestScore.creditScore,
-                    riskBand: latestScore.riskBand,
-                    merchantId: merchant.merchantId,
-                    transactionVolumeScore: latestScore.transactionVolumeScore,
-                    revenueConsistencyScore: latestScore.revenueConsistencyScore,
-                    growthTrendScore: latestScore.growthTrendScore,
-                    refundRateScore: latestScore.refundRateScore,
-                    settlementTimeScore: latestScore.settlementTimeScore,
-                    avgMonthlyRevenue: latestScore.avgMonthlyRevenue,
-                    growthPercentageMoM: latestScore.growthPercentageMoM,
-                    refundRatePercentage: latestScore.refundRatePercentage,
-                    avgSettlementDays: latestScore.avgSettlementDays,
-                });
+        try {
+            const aiResponse = await generateScoreExplanation({
+                creditScore: latestScore.creditScore,
+                riskBand: latestScore.riskBand,
+                merchantId: merchant.merchantId,
+                transactionVolumeScore: latestScore.transactionVolumeScore,
+                revenueConsistencyScore: latestScore.revenueConsistencyScore,
+                growthTrendScore: latestScore.growthTrendScore,
+                refundRateScore: latestScore.refundRateScore,
+                settlementTimeScore: latestScore.settlementTimeScore,
+                avgMonthlyRevenue: latestScore.avgMonthlyRevenue,
+                growthPercentageMoM: latestScore.growthPercentageMoM,
+                refundRatePercentage: latestScore.refundRatePercentage,
+                avgSettlementDays: latestScore.avgSettlementDays,
+            });
 
-                explanation = aiResponse.explanation;
-                recommendation = aiResponse.recommendation;
+            explanation = aiResponse.explanation;
+            recommendation = aiResponse.recommendation;
 
-                // Update the score record with AI explanation
-                await latestScore.update({ qwenExplanation: explanation, qwenRecommendation: recommendation });
-            } catch (aiError) {
-                logger.warn(`Failed to generate AI explanation: ${aiError.message}`);
-                explanation = explanation || "Penjelasan akan segera tersedia";
-                recommendation = recommendation || "Tingkatkan konsistensi transaksi";
-            }
+            // Update the score record with fresh AI explanation
+            await latestScore.update({ qwenExplanation: explanation, qwenRecommendation: recommendation });
+        } catch (aiError) {
+            logger.warn(`Failed to generate AI explanation: ${aiError.message}`);
+            explanation = "Penjelasan akan segera tersedia";
+            recommendation = "Tingkatkan konsistensi transaksi";
         }
 
         const detail = {
@@ -379,14 +377,6 @@ router.get("/loan-timing", authenticateToken, async (req, res, next) => {
                 success: true,
                 data: {
                     ...timing,
-                    estimatedMinLimit: 50000000,
-                    estimatedMaxLimit: avgMonthlyRevenue * 1.5,
-                    metricsUsed: {
-                        avgMonthlyRevenue,
-                        volatility: (volatility * 100).toFixed(2),
-                        daysAnalyzed: dailyRevenues.length,
-                        pattern,
-                    },
                 },
             });
         } catch (aiError) {
@@ -398,8 +388,6 @@ router.get("/loan-timing", authenticateToken, async (req, res, next) => {
                     confidence: 60,
                     reasoning: "Rekomendasi berbasis pola dasar",
                     dateRange: "Minggu ke-2 bulan berikutnya",
-                    estimatedMinLimit: 50000000,
-                    estimatedMaxLimit: avgMonthlyRevenue * 1.5,
                 },
             });
         }
