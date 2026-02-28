@@ -10,13 +10,16 @@ const sequelize = new Sequelize(process.env.DB_NAME || "paybaba", process.env.DB
     logging: process.env.NODE_ENV === "development" ? console.log : false,
     define: {
         timestamps: true,
-        underscored: true, // Automatically convert camelCase to snake_case
+        underscored: true,
     },
     pool: {
         max: 10,
-        min: 2,
+        min: 0,
         acquire: 30000,
         idle: 10000,
+    },
+    dialectOptions: {
+        keepAlive: true,
     },
 });
 
