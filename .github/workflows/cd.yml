@@ -64,11 +64,28 @@ jobs:
         runs-on: ubuntu-latest
 
         steps:
-            - name: Setup SSH Key
+            - name: Setup SSH key
               run: |
                   mkdir -p ~/.ssh
-                  echo "${{ secrets.SWARM_MASTER_SSH_KEY }}" > ~/.ssh/swarm_key
+                  
+                  # 1. Decode Base64 ke file (Menggunakan printf agar lebih aman)
+                  printf "%s" "${{ secrets.SWARM_MASTER_SSH_KEY }}" | base64 -d > ~/.ssh/swarm_key
+                  
+                  # 2. [PENTING] Tambahkan baris baru di akhir file (Obat error libcrypto)
+                  echo "" >> ~/.ssh/swarm_key
+                  
+                  # 3. Atur permission (Wajib 600)
                   chmod 600 ~/.ssh/swarm_key
+                  
+                  # 4. Validasi (Cek apakah depannya benar format Key, tanpa menampilkan isinya)
+                  if head -n 1 ~/.ssh/swarm_key | grep -q "BEGIN"; then
+                    echo "✅ SSH Key format looks correct (Header found)."
+                  else
+                    echo "❌ Error: Decoded key does not look like a valid PEM key."
+                    exit 1
+                  fi
+
+                  # 5. Scan host
                   ssh-keyscan -H ${{ env.SWARM_MASTER_HOST }} >> ~/.ssh/known_hosts
 
             - name: Execute Remote Deployment
