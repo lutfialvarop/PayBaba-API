@@ -1,0 +1,210 @@
+name: CD - Deploy to Docker Swarm
+
+on:
+    workflow_run:
+        workflows: ["CI - Test & Build Image"]
+        types: [completed]
+        branches:
+            - main
+
+env:
+    REGISTRY: docker.io
+    IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/paybaba-api
+    SWARM_MASTER_HOST: ${{ secrets.SWARM_MASTER_HOST }}
+    SWARM_MASTER_USER: ${{ secrets.SWARM_MASTER_USER }}
+    APP_DOMAIN: "apipaybaba.lutfialvarop.com"
+
+jobs:
+    # ═══════════════════════════════════════════════════════════
+    # DEPLOY TO DOCKER SWARM
+    # ═══════════════════════════════════════════════════════════
+    deploy:
+        name: Deploy to Docker Swarm
+        runs-on: ubuntu-latest
+        if: github.event.workflow_run.conclusion == 'success' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Setup SSH key
+              run: |
+                  mkdir -p ~/.ssh
+                  echo "${{ secrets.SWARM_MASTER_SSH_KEY }}" > ~/.ssh/swarm_key
+                  chmod 600 ~/.ssh/swarm_key
+                  ssh-keyscan -H ${{ env.SWARM_MASTER_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+            - name: Get image version
+              id: image
+              run: |
+                  VERSION=$(grep '"version"' package.json | head -1 | awk -F'"' '{print $4}')
+                  echo "version=$VERSION" >> $GITHUB_OUTPUT
+                  echo "full_image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_OUTPUT
+
+            - name: Deploy/Update service on Swarm Master
+              run: |
+                  ssh -i ~/.ssh/swarm_key ${{ env.SWARM_MASTER_USER }}@${{ env.SWARM_MASTER_HOST }} << 'EOF'
+
+                  set -e
+
+                  SERVICE_NAME="paybaba-api"
+                  IMAGE="${{ steps.image.outputs.full_image }}"
+                  DOMAIN="${{ env.APP_DOMAIN }}"
+
+                  echo "🔄 Deploying $SERVICE_NAME..."
+                  echo "Image: $IMAGE"
+                  echo "Domain: $DOMAIN"
+
+                  # Check if service exists
+                  if docker service ls --filter name=$SERVICE_NAME | grep -q $SERVICE_NAME; then
+                    echo "♻️  Updating existing service..."
+                    # NOTE: Kita update SEMUA env var agar jika ada perubahan di Secrets, server ikut berubah
+                    docker service update \
+                      --image $IMAGE \
+                      --env-add NODE_ENV=production \
+                      --env-add DB_HOST=my-postgres \
+                      --env-add DB_PORT=5432 \
+                      --env-add DB_NAME=${{ secrets.DB_NAME }} \
+                      --env-add DB_USER=${{ secrets.DB_USER }} \
+                      --env-add DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+                      --env-add JWT_ACCESS_TOKEN_SECRET=${{ secrets.JWT_ACCESS_TOKEN_SECRET }} \
+                      --env-add JWT_REFRESH_TOKEN_SECRET=${{ secrets.JWT_REFRESH_TOKEN_SECRET }} \
+                      --env-add JWT_ACCESS_TOKEN_EXPIRY=15m \
+                      --env-add JWT_REFRESH_TOKEN_EXPIRY=7d \
+                      --env-add QWEN_API_KEY=${{ secrets.QWEN_API_KEY }} \
+                      --env-add QWEN_BASE_URL=${{ secrets.QWEN_BASE_URL }} \
+                      --env-add BASE_URL=${{ secrets.BASE_URL }} \
+                      --env-add MID=${{ secrets.MID }} \
+                      --env-add PRIVATE_KEY=${{ secrets.PRIVATE_KEY }} \
+                      --env-add PUBLIC_KEY=${{ secrets.PUBLIC_KEY }} \
+                      --env-add PAYLABS_SERVER=${{ secrets.PAYLABS_SERVER }} \
+                      --env-add NOTIFY_URL=${{ secrets.NOTIFY_URL }} \
+                      --env-add ALERT_REVENUE_DROP_THRESHOLD=20 \
+                      --env-add ALERT_REFUND_SPIKE_THRESHOLD=5 \
+                      --env-add ALERT_SETTLEMENT_DELAY_HOURS=72 \
+                      --env-add ALERT_TRANSACTION_DROP_THRESHOLD=50 \
+                      --update-delay 10s \
+                      --update-parallelism 1 \
+                      --update-failure-action rollback \
+                      --update-monitor 5s \
+                      $SERVICE_NAME
+                  else
+                    echo "🚀 Creating new service..."
+                    # PERHATIAN: Tidak boleh ada komentar (#) di tengah command multi-line
+                    docker service create \
+                        --name $SERVICE_NAME \
+                        --replicas 2 \
+                        --network app-network \
+                        --update-delay 10s \
+                        --update-parallelism 1 \
+                        --update-failure-action rollback \
+                        --update-monitor 5s \
+                        --health-cmd "curl -f http://localhost:3000/health || exit 1" \
+                        --health-interval 30s \
+                        --health-timeout 10s \
+                        --health-retries 3 \
+                        --label "traefik.enable=true" \
+                        --label "traefik.http.routers.paybaba.rule=Host(\`$DOMAIN\`)" \
+                        --label "traefik.http.routers.paybaba.entrypoints=websecure" \
+                        --label "traefik.http.routers.paybaba.tls.certresolver=myresolver" \
+                        --label "traefik.http.services.paybaba.loadbalancer.server.port=3000" \
+                        --env NODE_ENV=production \
+                        --env DB_HOST=my-postgres \
+                        --env DB_PORT=5432 \
+                        --env DB_NAME=${{ secrets.DB_NAME }} \
+                        --env DB_USER=${{ secrets.DB_USER }} \
+                        --env DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+                        --env JWT_ACCESS_TOKEN_SECRET=${{ secrets.JWT_ACCESS_TOKEN_SECRET }} \
+                        --env JWT_REFRESH_TOKEN_SECRET=${{ secrets.JWT_REFRESH_TOKEN_SECRET }} \
+                        --env JWT_ACCESS_TOKEN_EXPIRY=15m \
+                        --env JWT_REFRESH_TOKEN_EXPIRY=7d \
+                        --env QWEN_API_KEY=${{ secrets.QWEN_API_KEY }} \
+                        --env QWEN_BASE_URL=${{ secrets.QWEN_BASE_URL }} \
+                        --env BASE_URL=${{ secrets.BASE_URL }} \
+                        --env MID=${{ secrets.MID }} \
+                        --env PRIVATE_KEY=${{ secrets.PRIVATE_KEY }} \
+                        --env PUBLIC_KEY=${{ secrets.PUBLIC_KEY }} \
+                        --env PAYLABS_SERVER=${{ secrets.PAYLABS_SERVER }} \
+                        --env NOTIFY_URL=${{ secrets.NOTIFY_URL }} \
+                        --env ALERT_REVENUE_DROP_THRESHOLD=20 \
+                        --env ALERT_REFUND_SPIKE_THRESHOLD=5 \
+                        --env ALERT_SETTLEMENT_DELAY_HOURS=72 \
+                        --env ALERT_TRANSACTION_DROP_THRESHOLD=50 \
+                        --constraint node.role==worker \
+                        $IMAGE
+                  fi
+
+                  echo "⏳ Waiting for service to stabilize..."
+                  sleep 15
+
+                  # Get service status
+                  docker service ps $SERVICE_NAME --no-trunc
+
+                  # Check service health
+                  SERVICE_STATUS=$(docker service ls --filter name=$SERVICE_NAME --format "{{.Replicas}}")
+                  echo "✅ Service replicas: $SERVICE_STATUS"
+
+                  EOF
+
+            - name: Verify deployment
+              run: |
+                  ssh -i ~/.ssh/swarm_key ${{ env.SWARM_MASTER_USER }}@${{ env.SWARM_MASTER_HOST }} << 'EOF'
+
+                  SERVICE_NAME="paybaba-api"
+
+                  echo "🔍 Verifying deployment..."
+                  echo ""
+                  echo "Service Info:"
+                  docker service ls --filter name=$SERVICE_NAME
+
+                  echo ""
+                  echo "Task Status:"
+                  docker service ps $SERVICE_NAME --no-trunc
+
+                  echo ""
+                  echo "✅ Deployment verification complete"
+
+                  EOF
+
+            - name: Cleanup SSH key
+              if: always()
+              run: rm -f ~/.ssh/swarm_key
+
+    # ═══════════════════════════════════════════════════════════
+    # HEALTH CHECK
+    # ═══════════════════════════════════════════════════════════
+    health-check:
+        name: Health Check Post-Deployment
+        needs: deploy
+        runs-on: ubuntu-latest
+        if: always()
+
+        steps:
+            - name: Check service health
+              run: |
+                  echo "🏥 Checking service health..."
+                  echo "Target: https://${{ env.APP_DOMAIN }}/health"
+                  echo ""
+
+                  # Try to access health endpoint via Domain (HTTPS)
+                  # Karena pakai Traefik, kita harus cek domain-nya, bukan IP Port 3000
+                  MAX_RETRIES=10
+                  RETRY_COUNT=0
+
+                  while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+                    echo "Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES..."
+                    
+                    # Menggunakan -k (insecure) jaga-jaga kalau sertifikat SSL baru generate belum stabil
+                    if curl -k -f https://${{ env.APP_DOMAIN }}/health > /dev/null 2>&1; then
+                      echo "✅ Health check passed"
+                      exit 0
+                    fi
+                    
+                    RETRY_COUNT=$((RETRY_COUNT + 1))
+                    if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                      sleep 10 # Tunggu agak lamaan dikit biar Traefik siap
+                    fi
+                  done
+
+                  echo "⚠️  Health check failed after $MAX_RETRIES attempts"
+                  echo "The service may still be starting up or Traefik config isn't propagated yet."

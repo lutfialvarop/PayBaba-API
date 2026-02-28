@@ -3,14 +3,19 @@ import logger from "../utils/logger.js";
 
 /**
  * Qwen client (Alibaba Cloud – OpenAI compatible interface)
- * Pastikan environment sudah diarahkan ke endpoint Qwen
+ * Lazy initialization - only create when needed
  */
-const qwen = new OpenAI({
-    apiKey: process.env.QWEN_API_KEY,
-    baseURL: process.env.QWEN_BASE_URL,
-    // contoh:
-    // https://dashscope.aliyuncs.com/compatible-mode/v1
-});
+let qwen = null;
+
+function getQwenClient() {
+    if (!qwen && process.env.QWEN_API_KEY) {
+        qwen = new OpenAI({
+            apiKey: process.env.QWEN_API_KEY,
+            baseURL: process.env.QWEN_BASE_URL || "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        });
+    }
+    return qwen;
+}
 
 /* =====================================================
    GLOBAL SYSTEM PROMPT — QWEN CREDIT INTELLIGENCE
@@ -44,6 +49,17 @@ All responses must be factual and based only on the provided data.
 
 export async function generateScoreExplanation(scoreData) {
     try {
+        const qwenClient = getQwenClient();
+        if (!qwenClient) {
+            logger.warn("Qwen API key not configured, returning fallback response");
+            return {
+                summary: "Insight kesiapan pembiayaan sedang diproses.",
+                strengths: [],
+                risk_factors: [],
+                improvement_suggestion: "Lanjutkan aktivitas transaksi untuk membangun histori data yang lebih stabil.",
+            };
+        }
+
         const {
             merchantId,
             creditScore,
@@ -102,7 +118,7 @@ Output MUST be valid JSON:
 }
 `;
 
-        const response = await qwen.chat.completions.create({
+        const response = await qwenClient.chat.completions.create({
             model: "qwen-plus", // 🔒 FULL QWEN
             messages: [
                 { role: "system", content: QWEN_SYSTEM_PROMPT },
@@ -169,6 +185,16 @@ Output MUST be valid JSON:
 
 export async function analyzeAnomaly(anomalyData) {
     try {
+        const qwenClient = getQwenClient();
+        if (!qwenClient) {
+            logger.warn("Qwen API key not configured, returning fallback response for anomaly");
+            return {
+                insight: "Sistem monitoring mendeteksi perubahan dalam pola transaksi. Sebaiknya periksa aktivitas terbaru untuk memastikan normalitas.",
+                risk_assessment: "Monitoring dilakukan secara berkelanjutan.",
+                mitigation: "Pantau indikator kinerja utama secara rutin.",
+            };
+        }
+
         const { merchantId, alertType, metricName, currentValue, thresholdValue, historicalAvg } = anomalyData;
 
         const prompt = `
@@ -193,7 +219,7 @@ Rules:
 - Keep explanation concise (2–3 sentences).
 `;
 
-        const response = await qwen.chat.completions.create({
+        const response = await qwenClient.chat.completions.create({
             model: "qwen-plus",
             messages: [
                 { role: "system", content: QWEN_SYSTEM_PROMPT },
@@ -216,6 +242,17 @@ Rules:
 
 export async function generateLoanTiming(merchantData) {
     try {
+        const qwenClient = getQwenClient();
+        if (!qwenClient) {
+            logger.warn("Qwen API key not configured, returning fallback response for loan timing");
+            return {
+                recommended_week: 2,
+                confidence: 60,
+                reasoning: "Rekomendasi berbasis pola transaksi historis dan stabilitas arus kas.",
+                date_range: "Minggu ke-2 bulan berikutnya",
+            };
+        }
+
         const { merchantId, dailyRevenues, avgMonthlyRevenue, volatility, pattern } = merchantData;
 
         const prompt = `
@@ -256,7 +293,7 @@ Output MUST be valid JSON with EXACTLY this structure and NO additional fields:
 }
 `;
 
-        const response = await qwen.chat.completions.create({
+        const response = await qwenClient.chat.completions.create({
             model: "qwen-plus",
             messages: [
                 { role: "system", content: QWEN_SYSTEM_PROMPT },

@@ -96,7 +96,7 @@ const options = {
             },
         },
     },
-    apis: ["./src/routes/auth.js", "./src/routes/merchant.js", "./src/routes/transaction.js", "./src/routes/bank.js"],
+    apis: ["src/routes/auth.js", "src/routes/merchant.js", "src/routes/transaction.js", "src/routes/bank.js"],
 };
 
 export const swaggerSpec = swaggerJsdoc(options);
