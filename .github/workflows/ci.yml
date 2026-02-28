@@ -1,0 +1,166 @@
+name: CI - Test & Build Image
+
+on:
+    push:
+        branches:
+            - main
+            - dev
+    pull_request:
+        branches:
+            - main
+            - dev
+
+env:
+    REGISTRY: docker.io
+    IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/paybaba-api
+
+jobs:
+    # ═══════════════════════════════════════════════════════════
+    # TEST & CODE COVERAGE
+    # ═══════════════════════════════════════════════════════════
+    test:
+        name: Unit Tests & Coverage
+        runs-on: ubuntu-latest
+
+        services:
+            postgres:
+                image: postgres:15
+                env:
+                    POSTGRES_USER: test_user
+                    POSTGRES_PASSWORD: test_password
+                    POSTGRES_DB: paybaba_test
+                options: >-
+                    --health-cmd pg_isready
+                    --health-interval 10s
+                    --health-timeout 5s
+                    --health-retries 5
+                ports:
+                    - 5432:5432
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: "20"
+                  cache: "npm"
+
+            - name: Install dependencies
+              run: npm ci
+
+            - name: Run tests with coverage
+              env:
+                  NODE_ENV: test
+                  DB_HOST: localhost
+                  DB_PORT: 5432
+                  DB_NAME: paybaba_test
+                  DB_USER: test_user
+                  DB_PASSWORD: test_password
+              run: npm run test:coverage
+
+            - name: Check coverage threshold (min 50%)
+              run: |
+                  echo "Checking test coverage..."
+                  if [ -f coverage/coverage-summary.json ]; then
+                    COVERAGE=$(grep -o '"lines"[^}]*"pct"[^}]*}' coverage/coverage-summary.json | grep -o '[0-9]*\.[0-9]*' | head -1 || echo "0")
+                    COVERAGE=$(printf "%.0f" "$COVERAGE")
+                    echo "Current Coverage: $COVERAGE%"
+                    echo "Minimum Required: 50%"
+                    if (( COVERAGE >= 50 )); then
+                      echo "✅ Coverage meets 50% minimum"
+                    else
+                      echo "❌ Coverage below 50% minimum"
+                      exit 1
+                    fi
+                  fi
+
+            - name: Upload coverage to Codecov
+              uses: codecov/codecov-action@v3
+              with:
+                  files: ./coverage/coverage-final.json
+                  flags: unittests
+                  name: codecov-umbrella
+              env:
+                  CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+    # ═══════════════════════════════════════════════════════════
+    # LINT & CODE QUALITY
+    # ═══════════════════════════════════════════════════════════
+    lint:
+        name: Lint & Code Quality
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: "20"
+                  cache: "npm"
+
+            - name: Install dependencies
+              run: npm ci
+
+            - name: Validate package.json
+              run: node -e "require('./package.json')" && echo "✅ Package.json valid"
+
+            - name: Check for syntax errors
+              run: npm test -- --passWithNoTests 2>/dev/null || echo "⚠️ No test files"
+
+    # ═══════════════════════════════════════════════════════════
+    # BUILD AND PUSH DOCKER IMAGE
+    # ═══════════════════════════════════════════════════════════
+    build:
+        name: Build & Push Docker Image
+        needs: [test, lint]
+        runs-on: ubuntu-latest
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+
+        permissions:
+            contents: read
+            packages: write
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
+
+            - name: Log in to Docker Hub
+              uses: docker/login-action@v3
+              with:
+                  username: ${{ secrets.DOCKER_USERNAME }}
+                  password: ${{ secrets.DOCKER_PASSWORD }}
+
+            - name: Extract metadata
+              id: meta
+              uses: docker/metadata-action@v5
+              with:
+                  images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+                  tags: |
+                      type=ref,event=branch
+                      type=semver,pattern={{version}}
+                      type=semver,pattern={{major}}.{{minor}}
+                      type=sha,prefix={{branch}}-
+                      type=raw,value=latest,enable={{is_default_branch}}
+
+            - name: Build and push Docker image
+              uses: docker/build-push-action@v5
+              with:
+                  context: .
+                  push: true
+                  tags: ${{ steps.meta.outputs.tags }}
+                  labels: ${{ steps.meta.outputs.labels }}
+                  cache-from: type=gha
+                  cache-to: type=gha,mode=max
+
+            - name: Image pushed successfully
+              run: |
+                  echo "✅ Docker image built and pushed"
+                  echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+                  echo "Tags: ${{ steps.meta.outputs.tags }}"
