@@ -1,5 +1,5 @@
 import dotenv from "dotenv";
-import Sequelize from "sequelize";
+import sequelize from "../database/connection.js";
 import User from "../models/User.js";
 import Merchant from "../models/Merchant.js";
 import DailyRevenue from "../models/DailyRevenue.js";
@@ -11,209 +11,181 @@ import { v4 as uuidv4 } from "uuid";
 
 dotenv.config();
 
-const sequelize = new Sequelize(process.env.DB_NAME, process.env.DB_USER, process.env.DB_PASSWORD, {
-    host: process.env.DB_HOST,
-    port: process.env.DB_PORT,
-    dialect: "postgres",
-    logging: false,
-});
+/**
+ * MERCHANT CONFIG
+ * A = Ratusan juta
+ * B = Puluhan juta
+ * C = Belasan juta
+ *
+ * Avg Monthly Revenue approx:
+ * A ≈ 22–28 tx × 500–650k × 0.97 × 30 ≈ 350–450 jt
+ * B ≈ 9–11 tx × 130–180k × 0.92 × 30 ≈ 40–70 jt
+ * C ≈ 3–5 tx × 80–100k × 0.85 × 30 ≈ 9–14 jt
+ */
+const MERCHANTS = [
+    {
+        email: "merchant.a@example.com",
+        companyName: "PT Mega Jaya Commerce",
+        scale: "Medium",
+        txPerDay: [22, 28],
+        amount: [500000, 650000],
+        successRate: 0.97,
+    },
+    {
+        email: "merchant.b@example.com",
+        companyName: "CV Maju Bersama",
+        scale: "Small",
+        txPerDay: [9, 11],
+        amount: [130000, 180000],
+        successRate: 0.92,
+    },
+    {
+        email: "merchant.c@example.com",
+        companyName: "UD Sederhana",
+        scale: "Micro",
+        txPerDay: [3, 5],
+        amount: [80000, 100000],
+        successRate: 0.85,
+    },
+];
+
+const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 
 async function seedDummyData() {
     try {
         await sequelize.authenticate();
         logger.info("✅ Database connection established");
 
-        // Sync database
-        await sequelize.sync({ alter: false });
-        logger.info("✅ Database models synced");
+        logger.info("🔄 Syncing database models...");
+        await sequelize.sync({ force: true }); // force: true to recreate all tables
+        logger.info("✅ Database schema created");
 
-        // ═══════════════════════════════════════════════════════════
-        // 1️⃣ CREATE DUMMY MERCHANT USER
-        // ═══════════════════════════════════════════════════════════
-        const merchantEmail = "dummy-merchant@example.com";
-        const merchantPassword = "DummyPass123";
-
-        // Check if merchant already exists
-        const existingUser = await User.findOne({ where: { email: merchantEmail } });
-
-        let user, merchant;
-
-        if (existingUser) {
-            logger.info("✅ Merchant user already exists");
-            user = existingUser;
-            merchant = await Merchant.findOne({ where: { userId: user.id } });
-        } else {
-            // Create new user
-            const hashedPassword = await bcryptjs.hash(merchantPassword, 10);
-            user = await User.create({
-                id: uuidv4(),
-                email: merchantEmail,
-                passwordHash: hashedPassword,
-                companyName: "PT Maju Jaya Retail",
-                fullName: "Budi Santoso",
-                city: "Jakarta",
-                address: "Jl. Gatot Subroto No 123, Jakarta Pusat",
-                phoneNumber: "081234567890",
-                status: "Active",
-                isEmailVerified: true,
-            });
-
-            logger.info(`✅ Created user: ${user.email}`);
-
-            // Create merchant
-            const merchantId = `MRC${Date.now()}`;
-            merchant = await Merchant.create({
-                merchantId,
-                userId: user.id,
-                businessCategory: "Retail",
-                subCategory: "Clothing & Fashion",
-                joinDate: new Date(),
-                businessScale: "Small",
-                taxId: "12.345.678.9-012.345",
-                businessLicenseNumber: "BL2024001234",
-            });
-
-            logger.info(`✅ Created merchant: ${merchant.merchantId}`);
-        }
-
-        // Create dummy transactions for the last 30 days
         const today = new Date();
-        const transactions = [];
-        const dailyRevenues = [];
 
-        for (let i = 30; i >= 0; i--) {
-            const transactionDate = new Date(today);
-            transactionDate.setDate(transactionDate.getDate() - i);
+        // ═══════════════════════════════════════════════════════════
+        // 1️⃣ CREATE 3 MERCHANTS
+        // ═══════════════════════════════════════════════════════════
+        for (const cfg of MERCHANTS) {
+            const password = "DummyPass123";
 
-            // Generate 3-8 random transactions per day
-            const txCount = Math.floor(Math.random() * 6) + 3;
-            let dailyTotal = 0;
-            let dailySuccessful = 0;
-            let dailyFailed = 0;
+            let user = await User.findOne({ where: { email: cfg.email } });
+            let merchant;
 
-            for (let j = 0; j < txCount; j++) {
-                const amount = Math.floor(Math.random() * 5000000) + 100000; // 100k - 5.1M
-                const status = Math.random() > 0.05 ? "Success" : "Failed";
-                const paymentMethod = ["QRIS", "Virtual Account", "E-Wallet"].at(Math.floor(Math.random() * 3));
+            if (!user) {
+                user = await User.create({
+                    id: uuidv4(),
+                    email: cfg.email,
+                    passwordHash: await bcryptjs.hash(password, 10),
+                    companyName: cfg.companyName,
+                    fullName: "Owner",
+                    city: "Jakarta",
+                    address: "Jl. Dummy No. 1",
+                    phoneNumber: "081234567890",
+                    status: "Active",
+                    isEmailVerified: true,
+                });
+            }
 
-                const transaction = {
-                    transactionId: `TXN${Date.now()}${Math.random().toString(36).substr(2, 9)}`,
-                    merchantId: merchant.merchantId,
-                    transactionDate,
-                    amount,
-                    paymentMethod,
-                    paymentChannel: paymentMethod === "QRIS" ? "Direct" : "Bank",
-                    status,
-                    refundStatus: "None",
-                    refundAmount: 0,
-                    chargebackFlag: false,
-                    settlementDate: status === "Success" ? transactionDate : null,
-                    settlementTime: status === "Success" ? "14:30:00" : null,
-                    feeAmount: (amount * 0.015).toFixed(2),
-                    netAmount: (amount * 0.985).toFixed(2),
-                    customerId: `CUST${Math.floor(Math.random() * 10000)}`,
-                    metadata: {
-                        orderId: `ORD${Math.floor(Math.random() * 100000)}`,
-                        description: "Pembayaran transaksi toko online",
-                    },
-                    createdAt: transactionDate,
-                    updatedAt: transactionDate,
-                };
+            merchant = await Merchant.findOne({ where: { userId: user.id } });
+            if (!merchant) {
+                merchant = await Merchant.create({
+                    merchantId: `MRC-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+                    userId: user.id,
+                    businessCategory: "Retail",
+                    subCategory: "General",
+                    businessScale: cfg.scale,
+                    joinDate: new Date(),
+                });
+            }
 
-                transactions.push(transaction);
+            await Transaction.destroy({ where: { merchantId: merchant.merchantId } });
+            await DailyRevenue.destroy({ where: { merchantId: merchant.merchantId } });
+            await CreditScore.destroy({ where: { merchantId: merchant.merchantId } });
 
-                if (status === "Success") {
-                    dailyTotal += amount;
-                    dailySuccessful++;
-                } else {
-                    dailyFailed++;
+            let totalRevenue = 0;
+            let successTx = 0;
+            let failedTx = 0;
+
+            for (let i = 30; i >= 0; i--) {
+                const date = new Date(today);
+                date.setDate(today.getDate() - i);
+
+                const txCount = rand(cfg.txPerDay[0], cfg.txPerDay[1]);
+                let dailyTotal = 0;
+                let dailySuccess = 0;
+                let dailyFail = 0;
+
+                for (let j = 0; j < txCount; j++) {
+                    const isSuccess = Math.random() < cfg.successRate;
+                    const amount = isSuccess ? rand(cfg.amount[0], cfg.amount[1]) : 0;
+
+                    await Transaction.create({
+                        transactionId: `TXN-${uuidv4()}`,
+                        merchantId: merchant.merchantId,
+                        transactionDate: date,
+                        amount,
+                        paymentMethod: "QRIS",
+                        paymentChannel: "Direct",
+                        status: isSuccess ? "Success" : "Failed",
+                        createdAt: date,
+                        updatedAt: date,
+                    });
+
+                    if (isSuccess) {
+                        dailyTotal += amount;
+                        dailySuccess++;
+                        successTx++;
+                    } else {
+                        dailyFail++;
+                        failedTx++;
+                    }
+                }
+
+                if (dailyTotal > 0) {
+                    totalRevenue += dailyTotal;
+                    await DailyRevenue.create({
+                        merchantId: merchant.merchantId,
+                        transactionDate: date,
+                        totalAmount: dailyTotal,
+                        transactionCount: txCount,
+                        successfulCount: dailySuccess,
+                        failedCount: dailyFail,
+                    });
                 }
             }
 
-            // Create daily revenue record
-            if (dailyTotal > 0) {
-                dailyRevenues.push({
-                    merchantId: merchant.merchantId,
-                    transactionDate,
-                    totalAmount: dailyTotal,
-                    transactionCount: txCount,
-                    successfulCount: dailySuccessful,
-                    failedCount: dailyFailed,
-                    refundedCount: 0,
-                    refundAmount: 0,
-                    createdAt: transactionDate,
-                    updatedAt: transactionDate,
-                });
-            }
-        }
+            const avgMonthlyRevenue = totalRevenue / 30;
+            const refundRate = failedTx / (successTx + failedTx);
 
-        // Bulk insert transactions
-        await Transaction.bulkCreate(transactions, { ignoreDuplicates: true });
-        logger.info(`✅ Created ${transactions.length} transactions`);
+            const creditScore = Math.round((successTx / (successTx + failedTx)) * 60 + (avgMonthlyRevenue > 300_000_000 ? 25 : avgMonthlyRevenue > 50_000_000 ? 15 : 5));
 
-        // Bulk insert daily revenues
-        await DailyRevenue.bulkCreate(dailyRevenues, { ignoreDuplicates: true });
-        logger.info(`✅ Created ${dailyRevenues.length} daily revenue records`);
+            const riskBand = creditScore >= 80 ? "Low" : creditScore >= 60 ? "Medium" : "High";
 
-        // Calculate and create credit score
-        const totalRevenue = dailyRevenues.reduce((sum, r) => sum + r.totalAmount, 0);
-        const avgMonthlyRevenue = totalRevenue / 30;
-        const successfulTx = transactions.filter((t) => t.status === "Success").length;
-        const failedTx = transactions.filter((t) => t.status === "Failed").length;
-        const refundRate = failedTx > 0 ? (failedTx / (successfulTx + failedTx)) * 100 : 0;
-
-        // Simple scoring algorithm
-        const volumeScore = Math.round(Math.min(100, (successfulTx / 100) * 100));
-        const consistencyScore = Math.round(75 + Math.random() * 15);
-        const growthScore = Math.round(60 + Math.random() * 25);
-        const refundScore = Math.round(Math.max(50, 100 - refundRate * 2));
-        const settlementScore = Math.round(85 + Math.random() * 15);
-
-        const creditScore = Math.round(volumeScore * 0.25 + consistencyScore * 0.25 + growthScore * 0.2 + refundScore * 0.1 + settlementScore * 0.2);
-
-        const riskBand = creditScore >= 80 ? "Low" : creditScore >= 60 ? "Medium" : "High";
-        const estimatedMinLimit = Math.round(avgMonthlyRevenue * 0.5);
-        const estimatedMaxLimit = Math.round(avgMonthlyRevenue * 2);
-
-        const existingScore = await CreditScore.findOne({
-            where: { merchantId: merchant.merchantId },
-        });
-
-        if (!existingScore) {
             await CreditScore.create({
                 merchantId: merchant.merchantId,
                 calculationDate: new Date(),
                 creditScore,
                 riskBand,
-                estimatedMinLimit,
-                estimatedMaxLimit,
-                transactionVolumeScore: volumeScore,
-                revenueConsistencyScore: consistencyScore,
-                growthTrendScore: growthScore,
-                refundRateScore: refundScore,
-                settlementTimeScore: settlementScore,
+                estimatedMinLimit: 50000000,
+                estimatedMaxLimit: Math.round(avgMonthlyRevenue * 1.5),
+                transactionVolumeScore: Math.round((successTx / (successTx + failedTx)) * 100),
+                revenueConsistencyScore: cfg.scale === "Medium" ? 85 : cfg.scale === "Small" ? 70 : 55,
+                growthTrendScore: cfg.scale === "Medium" ? 75 : cfg.scale === "Small" ? 60 : 45,
+                refundRateScore: Math.round(100 - refundRate * 100),
+                settlementTimeScore: cfg.scale === "Medium" ? 80 : 70,
                 avgMonthlyRevenue: Math.round(avgMonthlyRevenue),
-                revenueVolatility: (Math.random() * 20 + 5).toFixed(2),
-                growthPercentageMoM: (Math.random() * 15 - 5).toFixed(2),
-                refundRatePercentage: refundRate.toFixed(2),
-                avgSettlementDays: (1 + Math.random() * 2).toFixed(1),
-                transactionCount3m: successfulTx,
-                featureImportance: {
-                    transactionVolume: 0.28,
-                    revenueConsistency: 0.22,
-                    growthTrend: 0.18,
-                    refundRate: 0.12,
-                    settlementTime: 0.2,
-                },
-                qwenExplanation: `Skor kredit Anda mencapai ${creditScore} berdasarkan analisis ${successfulTx} transaksi sukses dalam 30 hari terakhir dengan rata-rata revenue ${Math.round(avgMonthlyRevenue).toLocaleString("id-ID")} per bulan.`,
-                qwenRecommendation: `Tingkatkan konsistensi transaksi harian dan pertahankan refund rate di bawah 5% untuk meningkatkan peluang persetujuan pinjaman.`,
+                revenueVolatility: Math.random() * 50,
+                growthPercentageMoM: (Math.random() - 0.5) * 20,
+                refundRatePercentage: Math.round(refundRate * 100),
+                avgSettlementDays: cfg.scale === "Medium" ? 2 : cfg.scale === "Small" ? 3 : 5,
+                transactionCount3m: successTx + failedTx,
             });
 
-            logger.info(`✅ Created credit score: ${creditScore} (${riskBand})`);
+            logger.info(`✅ Merchant seeded: ${cfg.companyName} | Avg Monthly: Rp ${Math.round(avgMonthlyRevenue).toLocaleString("id-ID")} | Score: ${creditScore} (${riskBand})`);
         }
 
         // ═══════════════════════════════════════════════════════════
-        // 2️⃣ CREATE DUMMY BANK USERS
+        // 2️⃣ CREATE DUMMY BANK USERS (UNCHANGED)
         // ═══════════════════════════════════════════════════════════
 
         const bankUsers = [
@@ -248,13 +220,11 @@ async function seedDummyData() {
 
         for (const bankData of bankUsers) {
             const existingBank = await User.findOne({ where: { email: bankData.email } });
-
             if (!existingBank) {
-                const hashedPassword = await bcryptjs.hash(bankData.password, 10);
                 await User.create({
                     id: uuidv4(),
                     email: bankData.email,
-                    passwordHash: hashedPassword,
+                    passwordHash: await bcryptjs.hash(bankData.password, 10),
                     companyName: bankData.companyName,
                     fullName: bankData.fullName,
                     city: bankData.city,
@@ -263,56 +233,15 @@ async function seedDummyData() {
                     status: "Active",
                     isEmailVerified: true,
                 });
-                logger.info(`✅ Created bank user: ${bankData.email}`);
-            } else {
-                logger.info(`✅ Bank user already exists: ${bankData.email}`);
             }
         }
 
-        logger.info(`
-╔════════════════════════════════════════════════════════════╗
-║          🎉 DUMMY DATA CREATED SUCCESSFULLY 🎉            ║
-╠════════════════════════════════════════════════════════════╣
-║ MERCHANT INFORMATION:                                      ║
-║  Email: ${merchantEmail}
-║  Password: ${merchantPassword}
-║  Company: ${user.companyName}
-║  Merchant ID: ${merchant.merchantId}
-║  Business: ${merchant.businessCategory} / ${merchant.subCategory}
-║  Scale: ${merchant.businessScale}
-╠════════════════════════════════════════════════════════════╣
-║ FINANCIAL DATA:                                            ║
-║  Transactions (30 days): ${transactions.length}
-║  Successful: ${successfulTx}
-║  Failed: ${failedTx}
-║  Total Revenue: ${totalRevenue.toLocaleString("id-ID")}
-║  Avg Monthly: ${Math.round(avgMonthlyRevenue).toLocaleString("id-ID")}
-║  Credit Score: ${creditScore} (${riskBand})
-║  Loan Limit: ${estimatedMinLimit.toLocaleString("id-ID")} - ${estimatedMaxLimit.toLocaleString("id-ID")}
-╠════════════════════════════════════════════════════════════╣
-║ BANK PORTAL USERS:                                         ║
-║  1. bank1@bca.com / BankPass123 (BCA)
-║  2. bank2@mandiri.com / BankPass123 (Mandiri)
-║  3. bank3@bni.com / BankPass123 (BNI)
-╠════════════════════════════════════════════════════════════╣
-║ NEXT STEPS:                                                ║
-║ 1. Merchant: Login dengan email: ${merchantEmail}
-║    Password: ${merchantPassword}
-║ 2. Bank Portal: Login dengan email bank (lihat atas)
-║    Password: BankPass123
-║ 3. Akses dashboard dan lihat merchant data
-║ 4. Cek transaksi, credit score, dan alerts
-║ 5. Test loan application workflow
-╚════════════════════════════════════════════════════════════╝
-        `);
+        logger.info("🎉 Dummy merchant + bank data created successfully");
     } catch (error) {
-        logger.error(`❌ Error seeding dummy data: ${error.message}`);
-        console.error(error);
+        logger.error(`❌ Seed error: ${error.message}`);
     } finally {
         await sequelize.close();
-        logger.info("Database connection closed");
     }
 }
 
-// Run seeder
 seedDummyData();
