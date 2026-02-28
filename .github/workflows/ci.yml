@@ -45,21 +45,32 @@ jobs:
               uses: actions/setup-node@v4
               with:
                   node-version: "20"
-                  # Cache dihapus agar tidak error mencari package-lock.json
+                  # Cache dihapus karena package-lock.json di-ignore
 
             - name: Install dependencies
-              # Menggunakan 'npm install' bukan 'npm ci' agar jalan tanpa lock file
+              # Pakai 'install' agar tetap jalan meski tanpa lock file
               run: npm install
 
-            # [FIX] Jalankan Migrasi Database Sebelum Test
+            # [FIX UTAMA] Buat Config Database Otomatis & Jalankan Migrasi
+            # Ini mengatasi masalah file 'migrate.js' yang hilang
             - name: Run Database Migrations
-              env:
-                  DB_HOST: localhost
-                  DB_PORT: 5432
-                  DB_NAME: paybaba_test
-                  DB_USER: test_user
-                  DB_PASSWORD: test_password
-              run: npm run migrate
+              run: |
+                  # 1. Buat folder config
+                  mkdir -p config
+
+                  # 2. Buat file config.json isinya kredensial database test
+                  echo '{
+                    "test": {
+                      "username": "test_user",
+                      "password": "test_password",
+                      "database": "paybaba_test",
+                      "host": "127.0.0.1",
+                      "dialect": "postgres"
+                    }
+                  }' > config/config.json
+
+                  # 3. Jalankan migrasi pakai sequelize-cli standar
+                  npx sequelize-cli db:migrate --env test
 
             - name: Run tests with coverage
               env:
@@ -69,7 +80,7 @@ jobs:
                   DB_NAME: paybaba_test
                   DB_USER: test_user
                   DB_PASSWORD: test_password
-                  # [FIX] Tambahkan JWT Secret dummy agar Auth test jalan
+                  # Dummy secrets agar test auth tidak error
                   JWT_ACCESS_TOKEN_SECRET: test_secret_access_key_12345
                   JWT_REFRESH_TOKEN_SECRET: test_secret_refresh_key_12345
               run: npm run test:coverage
@@ -82,7 +93,7 @@ jobs:
                     COVERAGE=$(printf "%.0f" "$COVERAGE")
                     echo "Current Coverage: $COVERAGE%"
                     echo "Minimum Required: 15%"
-                    # [FIX] Target diturunkan ke 15% dulu agar CI pass
+                    # Target sementara 15% agar CI pass dulu
                     if (( COVERAGE >= 15 )); then
                       echo "✅ Coverage meets 15% minimum"
                     else
