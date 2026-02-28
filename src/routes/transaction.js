@@ -45,6 +45,7 @@ const router = express.Router();
  *                 description: Detailed product information
  *                 example:
  *                   sku: SKU-001
+ *                   name: Smartphone X
  *                   category: Electronics
  *                   quantity: 2
  *                   unitPrice: 25000

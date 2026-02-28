@@ -77,10 +77,15 @@ jobs:
                   DB_NAME: paybaba_test
                   DB_USER: test_user
                   DB_PASSWORD: test_password
-                  # Gunakan secret dummy untuk CI
                   JWT_ACCESS_TOKEN_SECRET: ci_secret_key
                   JWT_REFRESH_TOKEN_SECRET: ci_refresh_key
-              # Asumsi: Code test kamu sudah melakukan sequelize.sync({force: true}) di beforeAll
+                  # Tambahkan variabel dummy agar aplikasi tidak crash saat inisialisasi
+                  BASE_URL: http://localhost:3000
+                  QWEN_API_KEY: dummy_key
+                  MID: 010001
+                  PRIVATE_KEY: dummy_private_key
+                  PUBLIC_KEY: dummy_public_key
+                  PAYLABS_SERVER: https://sandbox.example.com
               run: npm run test:coverage || true
 
             - name: Check Coverage Threshold (15%)

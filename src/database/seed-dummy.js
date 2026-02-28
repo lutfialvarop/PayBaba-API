@@ -11,6 +11,27 @@ import { v4 as uuidv4 } from "uuid";
 
 dotenv.config();
 
+const PRODUCT_CATALOG = {
+    Medium: [
+        { name: "Smartphone X1 Pro", sku: "ELC-001", category: "Electronics", unitPrice: 3500000 },
+        { name: "Wireless Earbuds G2", sku: "ELC-002", category: "Electronics", unitPrice: 850000 },
+        { name: "Smartwatch Series 5", sku: "ELC-003", category: "Electronics", unitPrice: 1200000 },
+        { name: "Mechanical Keyboard RGB", sku: "ELC-004", category: "Electronics", unitPrice: 650000 },
+    ],
+    Small: [
+        { name: "Cafe Latte Large", sku: "BEV-001", category: "Beverage", unitPrice: 35000 },
+        { name: "Caramel Macchiato", sku: "BEV-002", category: "Beverage", unitPrice: 42000 },
+        { name: "Almond Croissant", sku: "FOD-001", category: "Food", unitPrice: 28000 },
+        { name: "Beef Lasagna", sku: "FOD-002", category: "Food", unitPrice: 55000 },
+    ],
+    Micro: [
+        { name: "Kopi Hitam Tubruk", sku: "WRG-001", category: "Beverage", unitPrice: 5000 },
+        { name: "Nasi Goreng Telur", sku: "WRG-002", category: "Food", unitPrice: 15000 },
+        { name: "Mie Instan Rebus + Telur", sku: "WRG-003", category: "Food", unitPrice: 12000 },
+        { name: "Gorengan Tempe (Isi 5)", sku: "WRG-004", category: "Snack", unitPrice: 10000 },
+    ],
+};
+
 /**
  * MERCHANT CONFIG
  * A = Ratusan juta
@@ -117,22 +138,46 @@ async function seedDummyData() {
 
                 for (let j = 0; j < txCount; j++) {
                     const isSuccess = Math.random() < cfg.successRate;
-                    const amount = isSuccess ? rand(cfg.amount[0], cfg.amount[1]) : 0;
+
+                    // 1. Pilih produk dari katalog berdasarkan skala merchant
+                    const catalog = PRODUCT_CATALOG[cfg.scale];
+                    const product = catalog[rand(0, catalog.length - 1)];
+
+                    // 2. Tentukan jumlah pembelian (misal 1 sampai 5 barang)
+                    const quantity = rand(1, 5);
+
+                    // 3. HITUNG TOTAL HARGA (Sangat Penting: Grand Total harus sinkron)
+                    // Harga per item dikali jumlah item
+                    const calculatedTotal = product.unitPrice * quantity;
+
+                    // Jika transaksi gagal, amount tetap 0, tapi info barang tetap ada di metadata
+                    const finalAmount = isSuccess ? calculatedTotal : 0;
 
                     await Transaction.create({
                         transactionId: `TXN-${uuidv4()}`,
                         merchantId: merchant.merchantId,
                         transactionDate: date,
-                        amount,
+                        amount: finalAmount, // Ini adalah Grand Total transaksi
                         paymentMethod: "QRIS",
-                        paymentChannel: "Direct",
                         status: isSuccess ? "Success" : "Failed",
+                        metadata: {
+                            description: `Pembayaran ${quantity}x ${product.name}`,
+                            productInfo: {
+                                sku: product.sku,
+                                name: product.name,
+                                category: product.category,
+                                quantity: quantity,
+                                unitPrice: product.unitPrice, // Harga satuan
+                                totalPrice: calculatedTotal, // Total harga barang (Quantity * unitPrice)
+                                details: `${product.name} - ${quantity} pcs`,
+                            },
+                        },
                         createdAt: date,
                         updatedAt: date,
                     });
 
                     if (isSuccess) {
-                        dailyTotal += amount;
+                        dailyTotal += finalAmount;
                         dailySuccess++;
                         successTx++;
                     } else {
