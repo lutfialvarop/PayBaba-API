@@ -30,9 +30,16 @@ jobs:
             - name: Setup SSH key
               run: |
                   mkdir -p ~/.ssh
-                  echo "${{ secrets.SWARM_MASTER_SSH_KEY }}" > ~/.ssh/swarm_key
+                  # Gunakan printf untuk menjaga integritas karakter dan line break
+                  printf "%s" "${{ secrets.SWARM_MASTER_SSH_KEY }}" > ~/.ssh/swarm_key
+                  
+                  # Pastikan ada baris baru di akhir file (Sering jadi penyebab error libcrypto)
+                  sed -i '$a\' ~/.ssh/swarm_key
+                  
                   chmod 600 ~/.ssh/swarm_key
-                  ssh-keyscan -H ${{ env.SWARM_MASTER_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+                  
+                  # Scan host agar tidak ditanya yes/no
+                  ssh-keyscan -H ${{ env.SWARM_MASTER_HOST }} >> ~/.ssh/known_hosts
 
             - name: Get image version
               id: image
