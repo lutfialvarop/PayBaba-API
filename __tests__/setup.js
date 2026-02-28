@@ -6,6 +6,7 @@ import logger from "../src/utils/logger.js";
 process.env.NODE_ENV = "test";
 process.env.JWT_ACCESS_SECRET = "test-secret-key";
 process.env.JWT_REFRESH_SECRET = "test-refresh-secret";
+process.env.QWEN_API_KEY = "test-qwen-api-key";
 process.env.OPENAI_API_KEY = "test-api-key";
 process.env.BANK_API_KEY = "bank-secret-key-123";
 
@@ -19,7 +20,7 @@ jest.setTimeout(10000);
 beforeAll(async () => {
     try {
         await sequelize.authenticate();
-        await sequelize.sync({ alter: true });
+        await sequelize.sync({ force: true });
     } catch (error) {
         console.error("Database setup failed:", error);
         process.exit(1);
