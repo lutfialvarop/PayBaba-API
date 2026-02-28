@@ -59,7 +59,7 @@ jobs:
                   DB_NAME: paybaba_test
                   DB_USER: test_user
                   DB_PASSWORD: test_password
-              run: npx sequelize-cli db:migrate
+              run: npm run migrate
 
             - name: Run tests with coverage
               env:
