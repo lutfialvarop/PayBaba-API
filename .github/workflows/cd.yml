@@ -30,12 +30,10 @@ jobs:
             - name: Setup SSH key
               run: |
                   mkdir -p ~/.ssh
-                  # Gunakan printf untuk menjaga integritas karakter dan line break
-                  printf "%s" "${{ secrets.SWARM_MASTER_SSH_KEY }}" > ~/.ssh/swarm_key
+                  # Decode dari Base64 kembali ke format file SSH asli
+                  echo "${{ secrets.SWARM_MASTER_SSH_KEY }}" | base64 -d > ~/.ssh/swarm_key
                   
-                  # Pastikan ada baris baru di akhir file (Sering jadi penyebab error libcrypto)
-                  sed -i '$a\' ~/.ssh/swarm_key
-                  
+                  # Memberikan izin akses yang benar (Wajib 600)
                   chmod 600 ~/.ssh/swarm_key
                   
                   # Scan host agar tidak ditanya yes/no
