@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import logger from "../utils/logger.js";
+import MerchantService from "./merchantService.js";
 
 /**
  * Qwen client (Alibaba Cloud – OpenAI compatible interface)
@@ -334,8 +335,58 @@ Output MUST be valid JSON with EXACTLY this structure and NO additional fields:
     }
 }
 
+export async function generateMerchantGrowthInsights(merchantId) {
+    try {
+        const qwenClient = getQwenClient();
+
+        // Ambil data produk & tren dari database
+        const stats = await MerchantService.getMerchantProductStats(merchantId);
+
+        const prompt = `
+ANALISIS PERTUMBUHAN BISNIS (3 BULAN TERAKHIR)
+Merchant ID: ${merchantId}
+
+Tren Penjualan Bulanan (3 bulan terakhir): ${JSON.stringify(stats.salesTrend)}
+Daftar Produk Terlaris (Top Products):
+${JSON.stringify(stats.topProducts)}
+
+Tugas Anda:
+1. Berikan ringkasan performa penjualan dalam Bahasa Indonesia.
+2. Identifikasi produk yang "Rising Star" (paling banyak terjual).
+3. Berikan saran stok (inventory) spesifik berdasarkan nama produk atau SKU yang ada.
+4. Berikan 1 strategi pemasaran singkat untuk meningkatkan produk yang kurang laku.
+
+Output harus valid JSON:
+{
+  "performance_summary": "",
+  "top_trending_products": [{"name": "", "reason": ""}],
+  "inventory_advice": "",
+  "growth_opportunity": ""
+}
+`;
+
+        const response = await qwenClient.chat.completions.create({
+            model: "qwen-plus",
+            messages: [
+                { role: "system", content: QWEN_SYSTEM_PROMPT },
+                { role: "user", content: prompt },
+            ],
+            temperature: 0.4,
+        });
+
+        const content = response.choices[0].message.content;
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+
+        return JSON.parse(jsonMatch[0]);
+    } catch (error) {
+        logger.error(`Error generating insights: ${error.message}`);
+        return { error: "Gagal memproses insight merchant" };
+    }
+}
+
 export default {
     generateScoreExplanation,
     analyzeAnomaly,
     generateLoanTiming,
+    generateMerchantGrowthInsights,
 };

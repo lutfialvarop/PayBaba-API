@@ -7,7 +7,7 @@ import CreditScore from "../models/CreditScore.js";
 import DailyRevenue from "../models/DailyRevenue.js";
 import EarlyWarningAlert from "../models/EarlyWarningAlert.js";
 import logger from "../utils/logger.js";
-import { generateScoreExplanation, generateLoanTiming } from "../services/qwenService.js";
+import { generateScoreExplanation, generateLoanTiming, generateMerchantGrowthInsights } from "../services/qwenService.js";
 import { detectAnomalies, getActiveAlerts } from "../services/earlyWarningService.js";
 
 const router = express.Router();
@@ -461,6 +461,72 @@ router.get("/alerts", authenticateToken, async (req, res, next) => {
         });
     } catch (error) {
         logger.error(`Get alerts error: ${error.message}`);
+        next(error);
+    }
+});
+
+/**
+ * @swagger
+ * /api/merchant/product-insights:
+ *   get:
+ *     summary: Get AI-powered product growth insights
+ *     description: Mendapatkan analisis AI tentang performa produk, tren penjualan, dan saran inventaris berdasarkan data 3 bulan terakhir.
+ *     tags:
+ *       - Merchant
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Berhasil mendapatkan insight produk
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     performance_summary:
+ *                       type: string
+ *                     top_trending_products:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           name:
+ *                             type: string
+ *                           reason:
+ *                             type: string
+ *                     inventory_advice:
+ *                       type: string
+ *                     growth_opportunity:
+ *                       type: string
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Merchant tidak ditemukan
+ */
+router.get("/product-insights", authenticateToken, async (req, res, next) => {
+    try {
+        const merchant = await Merchant.findOne({ where: { userId: req.user.userId } });
+        if (!merchant) {
+            return res.status(404).json({
+                success: false,
+                message: "Merchant tidak ditemukan",
+            });
+        }
+
+        // Memanggil fungsi yang sudah Anda buat di qwenService.js
+        const insights = await generateMerchantGrowthInsights(merchant.merchantId);
+
+        res.json({
+            success: true,
+            data: insights,
+        });
+    } catch (error) {
         next(error);
     }
 });
