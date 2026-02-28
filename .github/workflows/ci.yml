@@ -51,26 +51,35 @@ jobs:
               # Pakai 'install' agar tetap jalan meski tanpa lock file
               run: npm install
 
-            # [FIX UTAMA] Buat Config Database Otomatis & Jalankan Migrasi
-            # Ini mengatasi masalah file 'migrate.js' yang hilang
-            - name: Run Database Migrations
+            # [FIX] Initialize Database untuk Tests (tanpa sequelize-cli)
+            # Project menggunakan ESM, jadi setup database via Node.js langsung
+            - name: Initialize Test Database
+              env:
+                  NODE_ENV: test
+                  DB_HOST: localhost
+                  DB_PORT: 5432
+                  DB_NAME: paybaba_test
+                  DB_USER: test_user
+                  DB_PASSWORD: test_password
               run: |
-                  # 1. Buat folder config
-                  mkdir -p config
-
-                  # 2. Buat file config.json isinya kredensial database test
-                  echo '{
-                    "test": {
-                      "username": "test_user",
-                      "password": "test_password",
-                      "database": "paybaba_test",
-                      "host": "127.0.0.1",
-                      "dialect": "postgres"
-                    }
-                  }' > config/config.json
-
-                  # 3. Jalankan migrasi pakai sequelize-cli standar
-                  npx sequelize-cli db:migrate --env test
+                  node -e "
+                    import('./src/database/connection.js').then(async (module) => {
+                      const sequelize = module.default;
+                      try {
+                        await sequelize.authenticate();
+                        console.log('✅ Database connected');
+                        
+                        await sequelize.sync({ force: true });
+                        console.log('✅ Database tables synced');
+                        
+                        await sequelize.close();
+                        console.log('✅ Database connection closed');
+                      } catch (err) {
+                        console.error('❌ Database init failed:', err.message);
+                        process.exit(1);
+                      }
+                    });
+                  "
 
             - name: Run tests with coverage
               env:
