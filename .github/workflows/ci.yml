@@ -51,8 +51,18 @@ jobs:
               # Pakai 'install' agar tetap jalan meski tanpa lock file
               run: npm install
 
-            # [FIX] Initialize Database untuk Tests (tanpa sequelize-cli)
-            # Project menggunakan ESM, jadi setup database via Node.js langsung
+            # [FIX] Wait untuk PostgreSQL fully ready
+            - name: Wait for PostgreSQL
+              run: |
+                  for i in {1..30}; do
+                    pg_isready -h localhost -p 5432 -U test_user && echo "✅ PostgreSQL ready" && exit 0
+                    echo "Waiting for PostgreSQL... ($i/30)"
+                    sleep 1
+                  done
+                  echo "❌ PostgreSQL failed to start"
+                  exit 1
+
+            # [FIX] Initialize Database untuk Tests yang correct
             - name: Initialize Test Database
               env:
                   NODE_ENV: test
@@ -61,25 +71,35 @@ jobs:
                   DB_NAME: paybaba_test
                   DB_USER: test_user
                   DB_PASSWORD: test_password
+                  JWT_ACCESS_TOKEN_SECRET: test_secret_access_key_12345
+                  JWT_REFRESH_TOKEN_SECRET: test_secret_refresh_key_12345
               run: |
-                  node -e "
-                    import('./src/database/connection.js').then(async (module) => {
-                      const sequelize = module.default;
-                      try {
-                        await sequelize.authenticate();
-                        console.log('✅ Database connected');
-                        
-                        await sequelize.sync({ force: true });
-                        console.log('✅ Database tables synced');
-                        
-                        await sequelize.close();
-                        console.log('✅ Database connection closed');
-                      } catch (err) {
-                        console.error('❌ Database init failed:', err.message);
-                        process.exit(1);
-                      }
-                    });
-                  "
+                  cat > init-db.mjs << 'EOF'
+                  import('sequelize').then(async (Sequelize) => {
+                    const { default: sequelize } = await import('./src/database/connection.js');
+                    try {
+                      console.log('📡 Authenticating to database...');
+                      await sequelize.authenticate();
+                      console.log('✅ Database connected');
+                      
+                      console.log('🔄 Syncing models...');
+                      await sequelize.sync({ force: true });
+                      console.log('✅ Database tables created');
+                      
+                      await sequelize.close();
+                      console.log('✅ Database initialization complete');
+                      process.exit(0);
+                    } catch (err) {
+                      console.error('❌ Database init failed:', err.message);
+                      console.error(err.stack);
+                      process.exit(1);
+                    }
+                  }).catch(err => {
+                    console.error('❌ Import failed:', err.message);
+                    process.exit(1);
+                  });
+                  EOF
+                  node init-db.mjs
 
             - name: Run tests with coverage
               env:
