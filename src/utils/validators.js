@@ -59,7 +59,7 @@ export const createTransactionSchema = Joi.object({
         .items(
             // Tetap array agar bisa banyak barang
             Joi.object({
-                sku: Joi.string().required(), // Sesuaikan dengan JSON (sku)
+                id: Joi.string().required(), // Sesuaikan dengan JSON (sku)
                 name: Joi.string().required(),
                 category: Joi.string().optional(), // Sesuaikan dengan JSON (category)
                 quantity: Joi.number().positive().integer().required(),

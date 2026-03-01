@@ -24,7 +24,8 @@ router.use(authenticateToken);
  *     summary: Get all merchants with credit score
  *     description: |
  *       Retrieve a paginated list of all merchants sorted by credit score (descending).
- *       Intended for bank portal use to browse and evaluate merchant creditworthiness.
+ *       Monthly revenue is calculated from the sum of `total_amount` in `daily_revenue`
+ *       for the current calendar month.
  *     tags:
  *       - Bank Portal
  *     security:
@@ -60,7 +61,6 @@ router.use(authenticateToken);
  *                   properties:
  *                     count:
  *                       type: integer
- *                       description: Number of merchants returned
  *                       example: 10
  *                     merchants:
  *                       type: array
@@ -91,10 +91,10 @@ router.use(authenticateToken);
  *                             type: string
  *                             enum: [Low, Medium, High]
  *                             example: Low
- *                           estimatedMaxLimit:
+ *                           monthlyRevenue:
  *                             type: number
- *                             description: Estimated maximum loan limit in IDR
- *                             example: 500000000
+ *                             description: Total revenue for the current calendar month in IDR
+ *                             example: 25000000
  *             example:
  *               success: true
  *               data:
@@ -107,7 +107,7 @@ router.use(authenticateToken);
  *                     businessScale: Small
  *                     creditScore: 82
  *                     riskBand: Low
- *                     estimatedMaxLimit: 500000000
+ *                     monthlyRevenue: 25000000
  *                   - merchantId: MRC789012
  *                     companyName: CV Berkah Bersama
  *                     city: Surabaya
@@ -115,7 +115,7 @@ router.use(authenticateToken);
  *                     businessScale: Micro
  *                     creditScore: 65
  *                     riskBand: Medium
- *                     estimatedMaxLimit: 150000000
+ *                     monthlyRevenue: 8000000
  *       401:
  *         description: Unauthorized – token missing or invalid
  *         content:
@@ -133,8 +133,6 @@ router.use(authenticateToken);
  */
 router.get("/merchants/all", async (req, res, next) => {
     try {
-        // name merchant, category, monthly rev, risk, score, category
-        // fe use pagination and sort by score desc
         const { limit = 50, offset = 0 } = req.query;
 
         const scores = await CreditScore.findAll({
@@ -159,7 +157,28 @@ router.get("/merchants/all", async (req, res, next) => {
             subQuery: false,
         });
 
-        // Enrich with score data
+        // Ambil monthly revenue dari daily_revenue bulan berjalan
+        const now = new Date();
+        const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+        const revenues = await DailyRevenue.findAll({
+            where: {
+                merchantId: { [Op.in]: merchantIds },
+                transactionDate: {
+                    [Op.between]: [firstDayOfMonth, lastDayOfMonth],
+                },
+            },
+            attributes: ["merchantId", "totalAmount"],
+            raw: true,
+        });
+
+        // Group dan sum per merchantId
+        const revenueMap = revenues.reduce((acc, r) => {
+            acc[r.merchantId] = (acc[r.merchantId] || 0) + parseFloat(r.totalAmount);
+            return acc;
+        }, {});
+
         const results = merchants.map((m) => {
             const score = scores.find((s) => s.merchantId === m.merchantId);
             return {
@@ -170,7 +189,7 @@ router.get("/merchants/all", async (req, res, next) => {
                 businessScale: m.businessScale,
                 creditScore: score?.creditScore,
                 riskBand: score?.riskBand,
-                estimatedMaxLimit: score?.estimatedMaxLimit,
+                monthlyRevenue: revenueMap[m.merchantId] ?? 0,
             };
         });
 
