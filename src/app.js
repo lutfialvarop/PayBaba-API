@@ -21,7 +21,14 @@ const app = express();
 const corsOptions = {
     origin:
         process.env.NODE_ENV === "production"
-            ? ["https://paybaba.id", "https://www.paybaba.id", process.env.FRONTEND_URL || "https://app.paybaba.id", "*"]
+            ? [
+                  "https://paybaba.id",
+                  "https://www.paybaba.id",
+                  process.env.FRONTEND_URL || "https://app.paybaba.id",
+                  "http://localhost:5173", // Vite
+                  "http://localhost:5174", // Vite
+                  "*",
+              ]
             : [
                   "http://localhost:3000",
                   "http://localhost:3001",
