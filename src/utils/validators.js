@@ -61,9 +61,9 @@ export const createTransactionSchema = Joi.object({
             Joi.object({
                 id: Joi.string().required(), // Sesuaikan dengan JSON (sku)
                 name: Joi.string().required(),
-                category: Joi.string().optional(), // Sesuaikan dengan JSON (category)
+                type: Joi.string().optional(), // Sesuaikan dengan JSON (category)
                 quantity: Joi.number().positive().integer().required(),
-                unitPrice: Joi.number().positive().required(), // Sesuaikan dengan JSON (unitPrice)
+                price: Joi.number().positive().required(), // Sesuaikan dengan JSON (unitPrice)
                 details: Joi.string().optional(), // Tambahan field details
             }),
         )
