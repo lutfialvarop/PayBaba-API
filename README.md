@@ -1,68 +1,49 @@
-# PayBaba Backend API
+# PayBaba API
 
-Merchant Credit Intelligence System Backend dengan Express.js + PostgreSQL
+**Merchant Credit Intelligence System** — Backend API untuk platform Payment Gateway dengan fitur credit scoring berbasis transaksi, early warning system, dan AI-powered insights menggunakan Qwen (Alibaba Cloud).
 
-## 🚀 Quick Start Setup
+---
 
-Panduan lengkap untuk menjalankan project ini dari awal setelah clone dari GitHub.
+## Tech Stack
 
-### A. Prerequisites (Persiapan)
+- **Runtime**: Node.js v18+ (ESM)
+- **Framework**: Express.js
+- **Database**: PostgreSQL 12+ via Sequelize ORM
+- **Authentication**: JWT (access + refresh token)
+- **AI Integration**: Qwen via OpenAI-compatible SDK (Alibaba Cloud DashScope)
+- **Validation**: Joi
+- **Logging**: Winston
+- **Docs**: Swagger UI (`/api-docs`)
 
-Pastikan sudah install:
+---
 
-- **Node.js** v18+ - [Download](https://nodejs.org)
-- **PostgreSQL** 12+ - [Download](https://www.postgresql.org)
-- **Git** - [Download](https://git-scm.com)
-
-Verifikasi:
+## Prerequisites
 
 ```bash
-node --version        # v18.x.x atau lebih tinggi
-npm --version         # 9.x.x atau lebih tinggi
-psql --version        # 12 atau lebih tinggi
+node --version   # v18.x.x atau lebih tinggi
+npm --version    # 9.x.x atau lebih tinggi
+psql --version   # 12 atau lebih tinggi
 ```
 
 ---
 
-### B. Clone & Install Dependencies
+## Quick Start
+
+### 1. Clone & Install
 
 ```bash
-# 1. Clone repository
 git clone <repository-url>
-cd "Paylabs x Alibaba/PayBab API"
-
-# 2. Install npm dependencies
+cd "PayBab API"
 npm install
-
-# 3. Verify installation
-npm list --depth=0
 ```
 
-**Expected output:**
-
-```
-├── express@4.18.2
-├── sequelize@6.x.x
-├── postgresql@0.18.0
-├── bcryptjs@2.4.3
-├── jsonwebtoken@9.x.x
-└── ... (other dependencies)
-```
-
----
-
-### C. Configure Environment Variables
+### 2. Environment Variables
 
 ```bash
-# 1. Copy template ke .env
 cp .env.example .env
-
-# 2. Edit .env dengan text editor favorit
-# atau gunakan nano/vim
-nano .env
 ```
 
-**Minimal Configuration:**
+Edit `.env`:
 
 ```env
 # Server
@@ -74,237 +55,226 @@ BASE_URL=http://localhost:3000
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=paybaba
-DB_USER=postgres          # Sesuaikan dengan user PostgreSQL Anda
-DB_PASSWORD=              # Isi dengan password PostgreSQL
+DB_USER=postgres
+DB_PASSWORD=your_password
 
-# JWT (Generate your own)
-JWT_ACCESS_TOKEN_SECRET=your_super_secret_access_key_min_32_chars_12345678
-JWT_REFRESH_TOKEN_SECRET=your_super_secret_refresh_key_min_32_chars_12345678
+# JWT
+JWT_ACCESS_TOKEN_SECRET=your_secret_min_32_chars
+JWT_REFRESH_TOKEN_SECRET=your_refresh_secret_min_32_chars
 JWT_ACCESS_TOKEN_EXPIRY=15m
 JWT_REFRESH_TOKEN_EXPIRY=7d
 
-# Payment Gateway (Paylabs)
+# Paylabs Payment Gateway
+MID=
+PRIVATE_KEY=
+PUBLIC_KEY=
 PAYLABS_SERVER=SIT
-MID=010612
 NOTIFY_URL=http://localhost:3000/api/webhook/paylabs
 
-# AI Service (Optional)
+# Qwen AI (Alibaba Cloud)
 QWEN_API_KEY=sk-your-key-here
 QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+
+# Alert Thresholds
+ALERT_REVENUE_DROP_THRESHOLD=20
+ALERT_REFUND_SPIKE_THRESHOLD=5
+ALERT_SETTLEMENT_DELAY_HOURS=72
+ALERT_TRANSACTION_DROP_THRESHOLD=50
 ```
 
-**Testing .env**:
+### 3. Database Setup & Seed
 
 ```bash
-# Verify PostgreSQL connection
-psql -U postgres -h localhost -d template1 -c "SELECT 1"
-```
-
----
-
-### D. Database Setup & Run
-
-#### Opsi 1: Automatic Setup (Recommended)
-
-```bash
-# 1. Create database
+# Buat database
 psql -U postgres -c "CREATE DATABASE paybaba;"
 
-# 2. Seed dummy data (merchant + 3 bank users)
+npm run migrate
+
+# Seed dummy data (merchant + bank accounts + transaksi)
 npm run seed
 
-# 3. Start server
-npm start
-```
-
-**Expected output:**
-
-```
-✅ Database connection established
-✅ Database models synced
-✅ Created user: dummy-merchant@example.com
-✅ Created 167 transactions
-✅ Created credit score: 90 (Low)
-✅ Created bank user: bank1@bca.com
-✅ Created bank user: bank2@mandiri.com
-✅ Created bank user: bank3@bni.com
-🎉 DUMMY DATA CREATED SUCCESSFULLY
-```
-
-#### Opsi 2: Manual Setup
-
-```bash
-# 1. Create database manually
-psql -U postgres << EOF
-CREATE DATABASE paybaba;
-EOF
-
-# 2. Start server (akan auto-sync models)
+# Jalankan server
 npm run dev
-
-# 3. Open browser: http://localhost:3000/api-docs
-# 4. Use register endpoint untuk create merchant baru
 ```
+
+### 4. Verifikasi
+
+Buka browser: [http://localhost:3000/api-docs](http://localhost:3000/api-docs)
 
 ---
 
-## ✅ Verify Installation
-
-Test bahwa semuanya berjalan:
+## NPM Scripts
 
 ```bash
-# 1. Check server berjalan
-curl http://localhost:3000/api-docs
-
-# 2. Login dengan dummy merchant
-curl -X POST http://localhost:3000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "dummy-merchant@example.com",
-    "password": "DummyPass123"
-  }'
-
-# Response seharusnya berisi accessToken
+npm run dev      # Development server dengan hot reload (nodemon)
+npm start        # Production server
+npm run migrate
+npm run seed     # Seed dummy data ke database
+npm test         # Run tests (Jest)
 ```
 
 ---
 
-## 📋 Dummy Account Credentials
+## Dummy Accounts
 
-### Merchant Account
+### Merchant Accounts
 
-```
-Email:    dummy-merchant@example.com
-Password: DummyPass123
-Company:  PT Maju Jaya Retail
-```
+| Risk Level | Email                  | Password     |
+| ---------- | ---------------------- | ------------ |
+| High Score | merchant.a@example.com | DummyPass123 |
+| Mid Score  | merchant.b@example.com | DummyPass123 |
+| Low Score  | merchant.c@example.com | DummyPass123 |
 
 ### Bank Portal Accounts
 
-```
-1. Email: bank1@bca.com        | Password: BankPass123
-2. Email: bank2@mandiri.com    | Password: BankPass123
-3. Email: bank3@bni.com        | Password: BankPass123
-```
-
----
-
-## 🎯 Testing dengan Swagger UI
-
-1. Buka browser: `http://localhost:3000/api-docs`
-2. Klik "Authorize"
-3. Paste token dari login response
-4. Test endpoints langsung dari Swagger UI
-
----
-
-## Development
-
-### Available NPM Commands
-
-```bash
-# Install dependencies
-npm install
-
-# Start development server with hot reload
-npm run dev
-
-# Start production server
-npm start
-
-# Seed dummy data (merchant + 3 bank users)
-npm run seed
-
-# Run tests
-npm test
-
-# Run linter
-npm run lint
-```
-
-### Quick Development Workflow
-
-```bash
-# 1. First time setup
-npm install
-cp .env.example .env
-# Edit .env dengan database credentials Anda
-
-# 2. Create and seed database
-psql -U postgres -c "CREATE DATABASE paybaba;"
-npm run seed
-
-# 3. Start development server
-npm run dev
-
-# 4. Open Swagger UI
-# Browser: http://localhost:3000/api-docs
-```
-
-### Reset Database During Development
-
-```bash
-# Drop and recreate database
-psql -U postgres << EOF
-DROP DATABASE IF EXISTS paybaba;
-CREATE DATABASE paybaba;
-EOF
-
-# Reseed data
-npm run seed
-
-# Restart dev server
-npm run dev
-```
+| Bank    | Email             | Password    |
+| ------- | ----------------- | ----------- |
+| BCA     | bank1@bca.com     | BankPass123 |
+| Mandiri | bank2@mandiri.com | BankPass123 |
+| BNI     | bank3@bni.com     | BankPass123 |
 
 ---
 
 ## API Endpoints
 
-### Authentication
+### Auth
 
 ```
-POST   /api/auth/register              - Register merchant
-POST   /api/auth/login                 - Login merchant
-POST   /api/auth/refresh               - Refresh access token
-POST   /api/auth/request-password-reset - Request password reset
-POST   /api/auth/reset-password        - Reset password with token
+POST   /api/auth/register                 Register merchant baru
+POST   /api/auth/login                    Login (merchant atau bank)
+POST   /api/auth/refresh                  Refresh access token
+POST   /api/auth/request-password-reset  Request reset password
+POST   /api/auth/reset-password          Reset password dengan token
 ```
 
-### Merchant
+### Merchant _(Bearer Token Required)_
 
 ```
-GET    /api/merchant/profile           - Get merchant profile
-GET    /api/merchant/dashboard         - Get dashboard with credit score
-GET    /api/merchant/credit-detail     - Get detailed credit score components
-GET    /api/merchant/loan-timing       - Get smart loan timing recommendation
+GET    /api/merchant/profile              Profile & company info
+GET    /api/merchant/dashboard            Dashboard + credit score summary
+GET    /api/merchant/credit-detail        Detail komponen credit score + AI explanation
+GET    /api/merchant/loan-timing          Rekomendasi waktu optimal pengajuan pinjaman (AI)
+GET    /api/merchant/product-insights     Analisis performa produk + saran inventaris (AI)
+GET    /api/merchant/alerts               Active early warning alerts
+POST   /api/merchant/recalculate          Trigger manual recalculation credit score
 ```
 
-### Transactions
+### Transactions _(Bearer Token Required)_
 
 ```
-POST   /api/transactions/create        - Create transaction (QRIS/CASH)
-GET    /api/transactions               - List merchant transactions
-GET    /api/transactions/:id           - Get transaction detail
-POST   /api/webhook/paylabs            - Webhook callback from Paylabs
+POST   /api/transactions/create           Buat transaksi baru (QRIS / CASH)
+GET    /api/transactions                  List transaksi merchant
+GET    /api/transactions/:id              Detail transaksi
+POST   /api/webhook/paylabs              Webhook callback dari Paylabs
 ```
 
-### Bank Portal (Bearer Token Required)
+### Bank Portal _(Bearer Token Required)_
 
 ```
-POST   /api/bank/merchants/search      - Search merchants by criteria
-GET    /api/bank/merchants/:merchantId - Get merchant profile
-GET    /api/bank/merchants/:merchantId/credit - Get credit details
-GET    /api/bank/merchants/:merchantId/alerts - Get active alerts
-POST   /api/bank/loan-applications     - List loan applications
-POST   /api/bank/loan-applications/create - Create loan application
-POST   /api/bank/loan-applications/:appId/approve - Approve loan
-POST   /api/bank/loan-applications/:appId/reject - Reject loan
+GET    /api/bank/merchants/all            List semua merchant + monthly revenue
+POST   /api/bank/merchants/search        Search merchant by criteria
+GET    /api/bank/merchants/:id            Profile merchant
+GET    /api/bank/merchants/:id/credit    Detail credit score merchant
+GET    /api/bank/merchants/:id/alerts    Active alerts merchant
+GET    /api/bank/loan-applications/:merchantId   List loan applications
+POST   /api/bank/loan-applications       Buat loan application (bank-initiated)
 ```
+
+---
+
+## Credit Score System
+
+Credit score dikalkulasi dari data transaksi 3 bulan terakhir dengan 5 komponen:
+
+| Komponen            | Bobot | Keterangan                                      |
+| ------------------- | ----- | ----------------------------------------------- |
+| Transaction Volume  | 25%   | Jumlah transaksi per bulan                      |
+| Revenue Consistency | 25%   | Stabilitas pendapatan (volatility)              |
+| Growth Trend        | 20%   | Month-over-Month revenue growth                 |
+| Refund Rate         | 10%   | Persentase refund (semakin rendah semakin baik) |
+| Settlement Time     | 20%   | Rata-rata hari settlement                       |
+
+**Risk Band:**
+
+- `Low` → Score ≥ 80
+- `Medium` → Score 60–79
+- `High` → Score < 60
+
+### Flow Kalkulasi
+
+```
+calculateAndSaveCreditScore(merchantId)
+    ├── calculateCreditScore()     ← hitung metrics dari Transaction & DailyRevenue
+    ├── generateScoreExplanation() ← generate AI explanation via Qwen
+    └── CreditScore.create()       ← INSERT 1 row baru (historical record)
+```
+
+Setiap kalkulasi menghasilkan **row baru** di tabel `credit_scores` — data historis tidak ditimpa.
+
+---
+
+## Early Warning System
+
+Sistem otomatis mendeteksi 5 jenis anomali:
+
+| Alert Type       | Trigger Condition                                               |
+| ---------------- | --------------------------------------------------------------- |
+| Revenue Drop     | Revenue turun >30% dalam 10 hari terakhir vs 20 hari sebelumnya |
+| Refund Spike     | Refund rate naik >5% dibanding periode sebelumnya               |
+| Settlement Delay | Rata-rata settlement >3 hari                                    |
+| Transaction Drop | Jumlah transaksi turun >25%                                     |
+| Score Drop       | Credit score turun >15 poin                                     |
+
+---
+
+## Project Structure
+
+```
+src/
+├── config/
+│   └── swagger.js
+├── database/
+│   ├── connection.js
+│   ├── init.js
+│   ├── seed.js
+│   └── seed-dummy.js
+├── middleware/
+│   ├── auth.js
+│   └── errorHandler.js
+├── models/
+│   ├── User.js
+│   ├── Merchant.js
+│   ├── Transaction.js
+│   ├── CreditScore.js
+│   ├── DailyRevenue.js
+│   ├── LoanApplication.js
+│   └── EarlyWarningAlert.js
+├── routes/
+│   ├── auth.js
+│   ├── merchant.js
+│   ├── bank.js
+│   └── transaction.js
+├── services/
+│   ├── authService.js
+│   ├── creditScoringService.js   ← kalkulasi + save credit score
+│   ├── qwenService.js            ← AI explanation, loan timing, product insights
+│   ├── earlyWarningService.js    ← anomaly detection
+│   └── merchantService.js        ← refund rate, monthly growth, product stats
+└── utils/
+    ├── logger.js
+    └── validators.js
+
+logs/
+├── combined.log
+└── error.log
+index.js
+```
+
+---
 
 ## Example Requests
 
-### Register (Merchant atau Bank)
+### Register Merchant
 
 ```bash
 curl -X POST http://localhost:3000/api/auth/register \
@@ -312,10 +282,10 @@ curl -X POST http://localhost:3000/api/auth/register \
   -d '{
     "email": "merchant@example.com",
     "password": "SecurePass123",
-    "companyName": "My Store",
-    "fullName": "Merchant Name",
+    "companyName": "Toko Saya",
+    "fullName": "Nama Merchant",
     "city": "Jakarta",
-    "address": "Jl. Main St 123",
+    "address": "Jl. Contoh No. 123",
     "phoneNumber": "081234567890"
   }'
 ```
@@ -325,16 +295,20 @@ curl -X POST http://localhost:3000/api/auth/register \
 ```bash
 curl -X POST http://localhost:3000/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{
-    "email": "merchant@example.com",
-    "password": "SecurePass123"
-  }'
+  -d '{"email": "merchant@example.com", "password": "SecurePass123"}'
 ```
 
-### Get Dashboard
+### Get Credit Detail
 
 ```bash
-curl -X GET http://localhost:3000/api/merchant/dashboard \
+curl http://localhost:3000/api/merchant/credit-detail \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Trigger Manual Credit Score Recalculation
+
+```bash
+curl -X POST http://localhost:3000/api/merchant/recalculate \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 ```
 
@@ -349,14 +323,14 @@ curl -X POST http://localhost:3000/api/transactions/create \
     "amount": 50000,
     "description": "Pembayaran order #12345",
     "productName": "Produk ABC",
-    "productInfo": {
-      "sku": "SKU-001",
-      "category": "Electronics",
-      "quantity": 2,
-      "unitPrice": 25000,
-      "details": "Smartphone X - Color Blue",
-      "merchant": "ABC Store"
-    }
+    "productInfo": [
+      {
+        "id": "SKU-001",
+        "name": "Produk ABC",
+        "quantity": 2,
+        "unitPrice": 25000
+      }
+    ]
   }'
 ```
 
@@ -374,143 +348,35 @@ curl -X POST http://localhost:3000/api/transactions/create \
   }'
 ```
 
-### Search Merchants (Bank Portal)
+### Bank — Get All Merchants
 
 ```bash
-curl -X POST http://localhost:3000/api/bank/merchants/search \
-  -H "Authorization: Bearer BANK_ACCESS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "minCreditScore": 60,
-    "riskBand": "Low",
-    "limit": 10
-  }'
+curl http://localhost:3000/api/bank/merchants/all \
+  -H "Authorization: Bearer BANK_ACCESS_TOKEN"
 ```
-
-## Project Structure
-
-```
-src/
-├── app.js                    # Express app setup
-├── config/                   # Configuration files
-├── database/
-│   ├── connection.js        # PostgreSQL connection
-│   ├── init.js              # Database initialization
-│   └── seed.js              # Seed demo data
-├── middleware/
-│   ├── auth.js              # JWT authentication
-│   └── errorHandler.js      # Error handling
-├── models/                  # Sequelize models
-│   ├── User.js
-│   ├── Merchant.js
-│   ├── Transaction.js
-│   ├── CreditScore.js
-│   ├── DailyRevenue.js
-│   ├── LoanApplication.js
-│   └── EarlyWarningAlert.js
-├── routes/
-│   ├── auth.js              # Auth endpoints
-│   ├── merchant.js          # Merchant endpoints
-│   └── transaction.js       # Transaction endpoints
-├── services/
-│   ├── authService.js       # Auth business logic
-│   ├── creditScoringService.js (TODO)
-│   ├── qwenService.js       (TODO)
-│   ├── earlyWarningService.js (TODO)
-│   └── loanTimingService.js (TODO)
-└── utils/
-    ├── logger.js            # Winston logger
-    └── validators.js        # Input validation (Joi)
-
-logs/                         # Log files
-index.js                      # Entry point
-.env.example                  # Environment variables template
-package.json                  # Dependencies
-```
-
-## Environment Variables
-
-Lihat `.env.example` untuk daftar lengkap variables yang diperlukan.
-
-### Key Variables
-
-- `NODE_ENV` - development/production
-- `PORT` - Server port (default: 3000)
-- `DB_*` - PostgreSQL credentials
-- `JWT_*` - JWT secrets dan expiry
-- `OPENAI_API_KEY` - Untuk Qwen/OpenAI integration
-- `MID`, `PRIVATE_KEY`, `PUBLIC_KEY` - Paylabs credentials
-
-## Development
-
-### Run dengan Hot Reload
-
-```bash
-npm run dev
-```
-
-### Testing
-
-```bash
-npm test
-```
-
-### Logging
-
-Logs disimpan di folder `logs/`:
-
-- `combined.log` - Semua logs
-- `error.log` - Error logs saja
-
-## TODO Features
-
-- [x] Auth (Register, Login, Reset Password)
-- [x] Transaction QRIS & CASH
-- [x] Merchant profile & dashboard
-- [ ] Credit Scoring system (rule-based)
-- [ ] Qwen AI integration untuk explanation
-- [ ] Early Warning system
-- [ ] Smart Loan Timing recommendation
-- [ ] Bank API endpoints
-- [ ] Paylabs QRIS integration (full)
-- [ ] Payment webhook verification
-- [ ] Email notifications
-
-## Architecture Notes
-
-### Tech Stack
-
-- **Framework**: Express.js
-- **Database**: PostgreSQL 12+
-- **ORM**: Sequelize
-- **Authentication**: JWT (access + refresh tokens)
-- **Validation**: Joi
-- **Logging**: Winston
-- **AI Integration**: OpenAI SDK (untuk Qwen via Alibaba)
-
-### Key Design Decisions
-
-1. **Modular Structure**: Services, Routes, Models terpisah
-2. **Error Handling**: Global middleware untuk consistent error responses
-3. **Validation**: Input validation di utils/validators.js
-4. **Logging**: Winston untuk production-ready logging
-5. **Database**: Sequelize ORM dengan model relationships
-6. **Authentication**: JWT dengan access + refresh token pattern
-
-## Next Steps
-
-1. **Implement Credit Scoring Service** - Hitung skor berdasarkan transaksi history
-2. **Integrate Qwen API** - Untuk AI explanation dari skor
-3. **Early Warning System** - Deteksi anomali transaksi
-4. **Smart Loan Timing** - Analisis pola transaksi mingguan
-5. **Paylabs Integration** - Full QRIS implementation
-6. **Bank Portal** - Separate API endpoints untuk bank partners
-
-## Support
-
-Untuk questions atau issues, hubungi tim development.
 
 ---
 
-**Last Updated**: Feb 27, 2026
-**Version**: 1.0.0-alpha
+## Reset Database
+
+```bash
+psql -U postgres -c "DROP DATABASE IF EXISTS paybaba;"
+psql -U postgres -c "CREATE DATABASE paybaba;"
+npm run migrate
+npm run seed
+npm run dev
+```
+
+---
+
+## Logging
+
+Log tersimpan di folder `logs/`:
+
+- `combined.log` — semua log
+- `error.log` — error log saja
+
+---
+
+**Version**: 1.0.0-alpha  
+**Last Updated**: March 2026

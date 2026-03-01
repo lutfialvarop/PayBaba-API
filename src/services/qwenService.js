@@ -20,63 +20,44 @@ function getQwenClient() {
 
 /* =====================================================
    GLOBAL SYSTEM PROMPT — QWEN CREDIT INTELLIGENCE
-   ===================================================== */
+===================================================== */
 
 const QWEN_SYSTEM_PROMPT = `
 You are Qwen, an AI Credit Intelligence Assistant operating inside a Payment Gateway ecosystem.
 
 Your role:
-•⁠  ⁠Explain transaction and cashflow patterns
-•⁠  ⁠Provide timing intelligence for business financing activities
-•⁠  ⁠Support decision-making, NOT decision-taking
+• Explain transaction and cashflow patterns
+• Provide timing intelligence for business financing activities
+• Support decision-making, NOT decision-taking
 
 Strict limitations:
-•⁠  ⁠Do NOT approve or reject loans
-•⁠  ⁠Do NOT determine credit eligibility
-•⁠  ⁠Do NOT mention interest rates, limits, exposure, or financing amounts
-•⁠  ⁠Do NOT provide financial guarantees
+• Do NOT approve or reject loans
+• Do NOT determine credit eligibility
+• Do NOT mention interest rates, limits, exposure, or financing amounts
+• Do NOT provide financial guarantees
 
 Principles:
-•⁠  ⁠Use neutral, professional, and informative language
-•⁠  ⁠Focus only on transaction behavior and cashflow stability
-•⁠  ⁠Be concise, explainable, and structured
+• Use neutral, professional, and informative language
+• Focus only on transaction behavior and cashflow stability
+• Be concise, explainable, and structured
 
 All responses must be factual and based only on the provided data.
 `;
 
 /* =====================================================
-   1️⃣ CREDIT READINESS + EXPLAINABLE INSIGHT
-   ===================================================== */
+   1. CREDIT READINESS + EXPLAINABLE INSIGHT
+===================================================== */
 
 export async function generateScoreExplanation(scoreData) {
     try {
         const qwenClient = getQwenClient();
         if (!qwenClient) {
             logger.warn("Qwen API key not configured, returning fallback response");
-            return {
-                summary: "Insight kesiapan pembiayaan sedang diproses.",
-                strengths: [],
-                risk_factors: [],
-                improvement_suggestion: "Lanjutkan aktivitas transaksi untuk membangun histori data yang lebih stabil.",
-            };
+            return buildScoreExplanationFallback(scoreData);
         }
 
-        const {
-            merchantId,
-            creditScore,
-            riskBand,
-
-            transactionVolumeScore,
-            revenueConsistencyScore,
-            growthTrendScore,
-            refundRateScore,
-            settlementTimeScore,
-
-            avgMonthlyRevenue,
-            growthPercentageMoM,
-            refundRatePercentage,
-            avgSettlementDays,
-        } = scoreData;
+        const { merchantId, creditScore, riskBand, transactionVolumeScore, revenueConsistencyScore, growthTrendScore, refundRateScore, settlementTimeScore, avgMonthlyRevenue, growthPercentageMoM, refundRatePercentage, avgSettlementDays } =
+            scoreData;
 
         const prompt = `
 CREDIT INTELLIGENCE DATA (TRANSACTION-BASED)
@@ -118,7 +99,7 @@ Output MUST be valid JSON:
 `;
 
         const response = await qwenClient.chat.completions.create({
-            model: "qwen-plus", // 🔒 FULL QWEN
+            model: "qwen-plus",
             messages: [
                 { role: "system", content: QWEN_SYSTEM_PROMPT },
                 { role: "user", content: prompt },
@@ -132,66 +113,57 @@ Output MUST be valid JSON:
 
         if (!jsonMatch) {
             logger.warn(`Failed to parse Qwen response for merchant ${merchantId}`);
-            return {
-                summary: "Insight kesiapan pembiayaan sedang diproses.",
-                strengths: [],
-                risk_factors: [],
-                improvement_suggestion: "Lanjutkan aktivitas transaksi untuk membangun histori data yang lebih stabil.",
-            };
+            return buildScoreExplanationFallback(scoreData);
         }
 
         return JSON.parse(jsonMatch[0]);
     } catch (error) {
         logger.warn(`Qwen API failed (${error.message}), using fallback explanation`);
-
-        // Generate smart fallback explanation based on credit data
-        const { creditScore, riskBand, transactionVolumeScore, revenueConsistencyScore, growthTrendScore, refundRateScore, avgMonthlyRevenue } = scoreData || {};
-
-        // Build strengths based on scores
-        const strengths = [];
-        if (transactionVolumeScore > 75) strengths.push("Volume transaksi yang solid");
-        if (revenueConsistencyScore > 75) strengths.push("Stabilitas revenue yang konsisten");
-        if (growthTrendScore > 70) strengths.push("Trend pertumbuhan positif");
-        if (refundRateScore > 80) strengths.push("Tingkat refund yang rendah");
-        if (strengths.length === 0) strengths.push("Aktivitas transaksi terdeteksi");
-
-        // Build risk factors based on scores
-        const riskFactors = [];
-        if (transactionVolumeScore < 50) riskFactors.push("Volume transaksi masih terbatas");
-        if (revenueConsistencyScore < 60) riskFactors.push("Fluktuasi revenue cukup tinggi");
-        if (refundRateScore < 70) riskFactors.push("Tingkat refund perlu diperhatikan");
-        if (riskFactors.length === 0) riskFactors.push("Data historis sedang diakumulasi");
-
-        return {
-            explanation: `Skor kredit Anda mencapai ${creditScore}/100 dengan kategori ${riskBand} Risk. Berdasarkan analisis data transaksi, merchant ini menunjukkan aktivitas pembayaran terukur dengan rata-rata revenue bulanan Rp ${avgMonthlyRevenue?.toLocaleString("id-ID") || "N/A"}. Profil ini dibangun dari evaluasi mendalam terhadap volume transaksi, konsistensi revenue, dan perilaku penyelesaian pembayaran.`,
-            recommendation: `${
-                creditScore >= 80
-                    ? "Skor ini menunjukkan profil kreditworthiness yang baik. Pertahankan konsistensi transaksi dan terus tingkatkan volume untuk membuka akses ke produk pembiayaan yang lebih komprehensif."
-                    : creditScore >= 60
-                      ? "Profil kreditworthiness sudah mulai terbentuk dengan baik. Fokus pada peningkatan stabilitas revenue dan pengurangan tingkat refund untuk menaikkan skor kredit."
-                      : "Lanjutkan aktivitas transaksi rutin dan bangun histori data yang lebih stabil untuk meningkatkan skor kredit Anda."
-            }`,
-            strengths,
-            risk_factors: riskFactors,
-            improvement_suggestion: "Tingkatkan konsistensi transaksi harian dan pertahankan refund rate di bawah 5% untuk meningkatkan peluang persetujuan pinjaman.",
-        };
+        return buildScoreExplanationFallback(scoreData);
     }
 }
 
+// ✅ FIX: Extract fallback logic ke fungsi terpisah agar reusable
+function buildScoreExplanationFallback(scoreData) {
+    const { creditScore, riskBand, transactionVolumeScore, revenueConsistencyScore, growthTrendScore, refundRateScore, avgMonthlyRevenue } = scoreData || {};
+
+    const strengths = [];
+    if (transactionVolumeScore > 75) strengths.push("Volume transaksi yang solid");
+    if (revenueConsistencyScore > 75) strengths.push("Stabilitas revenue yang konsisten");
+    if (growthTrendScore > 70) strengths.push("Trend pertumbuhan positif");
+    if (refundRateScore > 80) strengths.push("Tingkat refund yang rendah");
+    if (strengths.length === 0) strengths.push("Aktivitas transaksi terdeteksi");
+
+    const riskFactors = [];
+    if (transactionVolumeScore < 50) riskFactors.push("Volume transaksi masih terbatas");
+    if (revenueConsistencyScore < 60) riskFactors.push("Fluktuasi revenue cukup tinggi");
+    if (refundRateScore < 70) riskFactors.push("Tingkat refund perlu diperhatikan");
+    if (riskFactors.length === 0) riskFactors.push("Data historis sedang diakumulasi");
+
+    return {
+        explanation: `Skor kredit Anda mencapai ${creditScore}/100 dengan kategori ${riskBand} Risk. Berdasarkan analisis data transaksi, merchant ini menunjukkan aktivitas pembayaran terukur dengan rata-rata revenue bulanan Rp ${avgMonthlyRevenue?.toLocaleString("id-ID") || "N/A"}. Profil ini dibangun dari evaluasi mendalam terhadap volume transaksi, konsistensi revenue, dan perilaku penyelesaian pembayaran.`,
+        recommendation:
+            creditScore >= 80
+                ? "Skor ini menunjukkan profil kreditworthiness yang baik. Pertahankan konsistensi transaksi dan terus tingkatkan volume untuk membuka akses ke produk pembiayaan yang lebih komprehensif."
+                : creditScore >= 60
+                  ? "Profil kreditworthiness sudah mulai terbentuk dengan baik. Fokus pada peningkatan stabilitas revenue dan pengurangan tingkat refund untuk menaikkan skor kredit."
+                  : "Lanjutkan aktivitas transaksi rutin dan bangun histori data yang lebih stabil untuk meningkatkan skor kredit Anda.",
+        strengths,
+        risk_factors: riskFactors,
+        improvement_suggestion: "Tingkatkan konsistensi transaksi harian dan pertahankan refund rate di bawah 5% untuk meningkatkan peluang persetujuan pinjaman.",
+    };
+}
+
 /* =====================================================
-   2️⃣ EARLY SIGNAL / ANOMALY INSIGHT
-   ===================================================== */
+   2. EARLY SIGNAL / ANOMALY INSIGHT
+===================================================== */
 
 export async function analyzeAnomaly(anomalyData) {
     try {
         const qwenClient = getQwenClient();
         if (!qwenClient) {
             logger.warn("Qwen API key not configured, returning fallback response for anomaly");
-            return {
-                insight: "Sistem monitoring mendeteksi perubahan dalam pola transaksi. Sebaiknya periksa aktivitas terbaru untuk memastikan normalitas.",
-                risk_assessment: "Monitoring dilakukan secara berkelanjutan.",
-                mitigation: "Pantau indikator kinerja utama secara rutin.",
-            };
+            return `Terjadi perubahan pada ${anomalyData.metricName}. Disarankan untuk memantau tren transaksi secara berkala.`;
         }
 
         const { merchantId, alertType, metricName, currentValue, thresholdValue, historicalAvg } = anomalyData;
@@ -236,8 +208,8 @@ Rules:
 }
 
 /* =====================================================
-   3️⃣ SMART LOAN TIMING (CASHFLOW-BASED)
-   ===================================================== */
+   3. SMART LOAN TIMING (CASHFLOW-BASED)
+===================================================== */
 
 export async function generateLoanTiming(merchantData) {
     try {
@@ -265,23 +237,23 @@ It is NOT a credit decision and MUST NOT include any financing amount, limit, or
 Merchant ID: ${merchantId}
 
 Revenue Summary:
-•⁠  ⁠Average Monthly Revenue: Rp ${avgMonthlyRevenue.toLocaleString("id-ID")}
-•⁠  ⁠Revenue Volatility: ${volatility} %
-•⁠  ⁠Transaction Pattern: ${pattern}
+• Average Monthly Revenue: Rp ${avgMonthlyRevenue.toLocaleString("id-ID")}
+• Revenue Volatility: ${volatility} %
+• Transaction Pattern: ${pattern}
 
 Daily Revenue Data (Last 30 Days):
 [${dailyRevenues.join(", ")}]
 
 Tasks:
-1.⁠ ⁠Select the healthiest week of the month (1–4) purely from a cashflow stability perspective.
-2.⁠ ⁠Provide a confidence score from 0 to 100.
-3.⁠ ⁠Explain the reasoning briefly using observed patterns (stability, consistency, volatility).
-4.⁠ ⁠Provide a human-readable date range for the recommended week.
+1. Select the healthiest week of the month (1–4) purely from a cashflow stability perspective.
+2. Provide a confidence score from 0 to 100.
+3. Explain the reasoning briefly using observed patterns (stability, consistency, volatility).
+4. Provide a human-readable date range for the recommended week.
 
 STRICT OUTPUT RULES:
-•⁠  ⁠DO NOT include any financing amount, limit, exposure, or monetary value.
-•⁠  ⁠DO NOT include approval, rejection, or eligibility language.
-•⁠  ⁠DO NOT add any extra fields beyond those requested.
+• DO NOT include any financing amount, limit, exposure, or monetary value.
+• DO NOT include approval, rejection, or eligibility language.
+• DO NOT add any extra fields beyond those requested.
 
 Output MUST be valid JSON with EXACTLY this structure and NO additional fields:
 {
@@ -315,7 +287,6 @@ Output MUST be valid JSON with EXACTLY this structure and NO additional fields:
         }
 
         const parsed = JSON.parse(jsonMatch[0]);
-
         return {
             recommended_week: parsed.recommended_week,
             confidence: parsed.confidence,
@@ -333,12 +304,30 @@ Output MUST be valid JSON with EXACTLY this structure and NO additional fields:
     }
 }
 
+/* =====================================================
+   4. MERCHANT GROWTH INSIGHTS
+===================================================== */
+
 export async function generateMerchantGrowthInsights(merchantId) {
     try {
-        const qwenClient = getQwenClient();
-
         // Ambil data produk & tren dari database
         const stats = await MerchantService.getMerchantProductStats(merchantId);
+
+        const qwenClient = getQwenClient();
+
+        // ✅ FIX: tambahkan fallback jika qwenClient null
+        if (!qwenClient) {
+            logger.warn("Qwen API key not configured, returning fallback for growth insights");
+            return {
+                performance_summary: "Data penjualan sedang dianalisis. Pastikan API key Qwen sudah dikonfigurasi untuk mendapatkan insight lengkap.",
+                top_trending_products: stats.topProducts.slice(0, 3).map((p) => ({
+                    name: p.name,
+                    reason: `Terjual ${p.totalQty} unit dalam 3 bulan terakhir`,
+                })),
+                inventory_advice: "Pantau stok produk terlaris dan pastikan ketersediaan untuk memenuhi permintaan.",
+                growth_opportunity: "Tingkatkan promosi pada produk yang belum optimal untuk meningkatkan volume penjualan.",
+            };
+        }
 
         const prompt = `
 ANALISIS PERTUMBUHAN BISNIS (3 BULAN TERAKHIR)
@@ -370,15 +359,25 @@ Output harus valid JSON:
                 { role: "user", content: prompt },
             ],
             temperature: 0.4,
+            max_tokens: 600,
         });
 
         const content = response.choices[0].message.content;
         const jsonMatch = content.match(/\{[\s\S]*\}/);
 
+        if (!jsonMatch) {
+            throw new Error("Failed to parse Qwen JSON response");
+        }
+
         return JSON.parse(jsonMatch[0]);
     } catch (error) {
         logger.error(`Error generating insights: ${error.message}`);
-        return { error: "Gagal memproses insight merchant" };
+        return {
+            performance_summary: "Gagal memproses insight merchant saat ini. Silakan coba beberapa saat lagi.",
+            top_trending_products: [],
+            inventory_advice: "Pantau stok produk utama secara rutin.",
+            growth_opportunity: "Data tidak tersedia saat ini.",
+        };
     }
 }
 

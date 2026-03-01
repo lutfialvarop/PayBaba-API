@@ -5,11 +5,13 @@ import User from "../models/User.js";
 import Merchant from "../models/Merchant.js";
 import CreditScore from "../models/CreditScore.js";
 import DailyRevenue from "../models/DailyRevenue.js";
-import EarlyWarningAlert from "../models/EarlyWarningAlert.js";
 import logger from "../utils/logger.js";
-import { generateScoreExplanation, generateLoanTiming, generateMerchantGrowthInsights } from "../services/qwenService.js";
-import { detectAnomalies, getActiveAlerts } from "../services/earlyWarningService.js";
+import { generateLoanTiming, generateMerchantGrowthInsights } from "../services/qwenService.js";
+import { getActiveAlerts } from "../services/earlyWarningService.js";
 import { calculateMonthlyGrowth, calculateRefundRate } from "../services/merchantService.js";
+
+// ✅ Import calculateAndSaveCreditScore untuk trigger manual jika diperlukan
+import { calculateAndSaveCreditScore } from "../services/creditScoringService.js";
 
 const router = express.Router();
 
@@ -19,7 +21,8 @@ const router = express.Router();
  *   get:
  *     summary: Get merchant profile
  *     description: Retrieve current merchant profile and company information
- *     tags: [Merchant]
+ *     tags:
+ *       - Merchant
  *     security:
  *       - BearerAuth: []
  *     responses:
@@ -30,7 +33,8 @@ const router = express.Router();
  *             schema:
  *               type: object
  *               properties:
- *                 success: { type: boolean }
+ *                 success:
+ *                   type: boolean
  *                 data:
  *                   type: object
  *                   properties:
@@ -49,10 +53,7 @@ router.get("/profile", authenticateToken, async (req, res, next) => {
         const merchant = await Merchant.findOne({ where: { userId: req.user.userId } });
 
         if (!user || !merchant) {
-            return res.status(404).json({
-                success: false,
-                message: "Merchant tidak ditemukan",
-            });
+            return res.status(404).json({ success: false, message: "Merchant tidak ditemukan" });
         }
 
         res.json({
@@ -87,7 +88,8 @@ router.get("/profile", authenticateToken, async (req, res, next) => {
  *   get:
  *     summary: Get merchant dashboard
  *     description: Retrieve dashboard summary with credit score and metrics
- *     tags: [Merchant]
+ *     tags:
+ *       - Merchant
  *     security:
  *       - BearerAuth: []
  *     responses:
@@ -98,16 +100,24 @@ router.get("/profile", authenticateToken, async (req, res, next) => {
  *             schema:
  *               type: object
  *               properties:
- *                 success: { type: boolean }
+ *                 success:
+ *                   type: boolean
  *                 data:
  *                   type: object
  *                   properties:
- *                     merchantId: { type: string }
- *                     companyName: { type: string }
- *                     currentCreditScore: { type: integer }
- *                     riskBand: { type: string, enum: [Low, Medium, High] }
- *                     estimatedMinLimit: { type: number }
- *                     estimatedMaxLimit: { type: number }
+ *                     merchantId:
+ *                       type: string
+ *                     companyName:
+ *                       type: string
+ *                     currentCreditScore:
+ *                       type: integer
+ *                     riskBand:
+ *                       type: string
+ *                       enum: [Low, Medium, High]
+ *                     estimatedMinLimit:
+ *                       type: number
+ *                     estimatedMaxLimit:
+ *                       type: number
  *       401:
  *         description: Unauthorized
  */
@@ -115,13 +125,9 @@ router.get("/dashboard", authenticateToken, async (req, res, next) => {
     try {
         const merchant = await Merchant.findOne({ where: { userId: req.user.userId } });
         if (!merchant) {
-            return res.status(404).json({
-                success: false,
-                message: "Merchant tidak ditemukan",
-            });
+            return res.status(404).json({ success: false, message: "Merchant tidak ditemukan" });
         }
 
-        // Get latest credit score
         const latestScore = await CreditScore.findOne({
             where: { merchantId: merchant.merchantId },
             order: [["calculationDate", "DESC"]],
@@ -131,50 +137,35 @@ router.get("/dashboard", authenticateToken, async (req, res, next) => {
             (await DailyRevenue.sum("totalAmount", {
                 where: {
                     merchantId: merchant.merchantId,
-                    transactionDate: {
-                        [Op.gte]: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
-                    },
+                    transactionDate: { [Op.gte]: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
                 },
             })) || 0;
 
-        const monthlyGrowth = await calculateMonthlyGrowth(merchant.merchantId); // Placeholder, will be calculated from revenue data
-        const refundRate = await calculateRefundRate(merchant.merchantId); // Placeholder, will be calculated from transactions
+        const monthlyGrowth = await calculateMonthlyGrowth(merchant.merchantId);
+        const refundRate = await calculateRefundRate(merchant.merchantId);
         const totalTransactions = await DailyRevenue.count({
             where: {
                 merchantId: merchant.merchantId,
-                transactionDate: {
-                    [Op.gte]: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
-                },
+                transactionDate: { [Op.gte]: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
             },
         });
-        const avgDailyTransaction = totalTransactions / 30; // Placeholder, will be calculated from transactions
-
-        // For now, return mock data (will be replaced with real calculations)
-        const dashboardData = {
-            merchantId: merchant.merchantId,
-            companyName: req.user.companyName,
-            currentCreditScore: latestScore?.creditScore || 0,
-            riskBand: latestScore?.riskBand || "N/A",
-            estimatedMinLimit: latestScore?.estimatedMinLimit || 0,
-            estimatedMaxLimit: latestScore?.estimatedMaxLimit || 0,
-            monthlyTransactionVolume: monthlyTransactionVolume, // Will be calculated from transactions
-            monthlyGrowth: monthlyGrowth,
-            refundRate: refundRate,
-            totalTransactions: totalTransactions,
-            avgDailyTransaction: avgDailyTransaction,
-            scoreHistory: latestScore
-                ? [
-                      {
-                          date: latestScore.calculationDate,
-                          score: latestScore.creditScore,
-                      },
-                  ]
-                : [],
-        };
 
         res.json({
             success: true,
-            data: dashboardData,
+            data: {
+                merchantId: merchant.merchantId,
+                companyName: req.user.companyName,
+                currentCreditScore: latestScore?.creditScore || 0,
+                riskBand: latestScore?.riskBand || "N/A",
+                estimatedMinLimit: latestScore?.estimatedMinLimit || 0,
+                estimatedMaxLimit: latestScore?.estimatedMaxLimit || 0,
+                monthlyTransactionVolume,
+                monthlyGrowth,
+                refundRate,
+                totalTransactions,
+                avgDailyTransaction: parseFloat((totalTransactions / 30).toFixed(2)),
+                scoreHistory: latestScore ? [{ date: latestScore.calculationDate, score: latestScore.creditScore }] : [],
+            },
         });
     } catch (error) {
         logger.error(`Get dashboard error: ${error.message}`);
@@ -187,8 +178,11 @@ router.get("/dashboard", authenticateToken, async (req, res, next) => {
  * /api/merchant/credit-detail:
  *   get:
  *     summary: Get detailed credit score
- *     description: Retrieve detailed credit score components with AI explanation
- *     tags: [Merchant]
+ *     description: |
+ *       Retrieve detailed credit score components along with AI explanation
+ *       and recommendation yang sudah tersimpan saat score terakhir dikalkulasi.
+ *     tags:
+ *       - Merchant
  *     security:
  *       - BearerAuth: []
  *     responses:
@@ -199,27 +193,36 @@ router.get("/dashboard", authenticateToken, async (req, res, next) => {
  *             schema:
  *               type: object
  *               properties:
- *                 success: { type: boolean }
+ *                 success:
+ *                   type: boolean
  *                 data:
  *                   type: object
  *                   properties:
- *                     score: { type: integer }
- *                     riskBand: { type: string }
- *                     components: { type: object }
- *                     metrics: { type: object }
- *                     explanation: { type: string }
- *                     recommendation: { type: string }
+ *                     score:
+ *                       type: integer
+ *                     riskBand:
+ *                       type: string
+ *                     components:
+ *                       type: object
+ *                     metrics:
+ *                       type: object
+ *                     explanation:
+ *                       type: string
+ *                     recommendation:
+ *                       type: string
+ *                     calculatedAt:
+ *                       type: string
+ *                       format: date-time
  *       401:
  *         description: Unauthorized
+ *       404:
+ *         description: Skor kredit belum tersedia
  */
 router.get("/credit-detail", authenticateToken, async (req, res, next) => {
     try {
         const merchant = await Merchant.findOne({ where: { userId: req.user.userId } });
         if (!merchant) {
-            return res.status(404).json({
-                success: false,
-                message: "Merchant tidak ditemukan",
-            });
+            return res.status(404).json({ success: false, message: "Merchant tidak ditemukan" });
         }
 
         const latestScore = await CreditScore.findOne({
@@ -228,91 +231,107 @@ router.get("/credit-detail", authenticateToken, async (req, res, next) => {
         });
 
         if (!latestScore) {
-            return res.status(404).json({
-                success: false,
-                message: "Skor kredit belum tersedia",
-            });
+            return res.status(404).json({ success: false, message: "Skor kredit belum tersedia" });
         }
 
-        // Generate fresh AI explanation every time
-        let explanation;
-        let recommendation;
-
-        try {
-            const aiResponse = await generateScoreExplanation({
-                creditScore: latestScore.creditScore,
-                riskBand: latestScore.riskBand,
-                merchantId: merchant.merchantId,
-                transactionVolumeScore: latestScore.transactionVolumeScore,
-                revenueConsistencyScore: latestScore.revenueConsistencyScore,
-                growthTrendScore: latestScore.growthTrendScore,
-                refundRateScore: latestScore.refundRateScore,
-                settlementTimeScore: latestScore.settlementTimeScore,
-                avgMonthlyRevenue: latestScore.avgMonthlyRevenue,
-                growthPercentageMoM: latestScore.growthPercentageMoM,
-                refundRatePercentage: latestScore.refundRatePercentage,
-                avgSettlementDays: latestScore.avgSettlementDays,
-            });
-
-            console.log("AI Explanation Response:", aiResponse);
-
-            explanation = aiResponse.explanation;
-            recommendation = aiResponse.recommendation;
-
-            // Update the score record with fresh AI explanation
-            await latestScore.update({ qwenExplanation: explanation, qwenRecommendation: recommendation });
-        } catch (aiError) {
-            logger.warn(`Failed to generate AI explanation: ${aiError.message}`);
-            explanation = "Penjelasan akan segera tersedia";
-            recommendation = "Tingkatkan konsistensi transaksi";
-        }
-
-        const detail = {
-            score: latestScore.creditScore,
-            riskBand: latestScore.riskBand,
-            estimatedMinLimit: latestScore.estimatedMinLimit,
-            estimatedMaxLimit: latestScore.estimatedMaxLimit,
-            components: {
-                transactionVolume: {
-                    score: latestScore.transactionVolumeScore,
-                    weight: 0.25,
-                },
-                revenueConsistency: {
-                    score: latestScore.revenueConsistencyScore,
-                    weight: 0.25,
-                },
-                growthTrend: {
-                    score: latestScore.growthTrendScore,
-                    weight: 0.2,
-                },
-                refundRate: {
-                    score: latestScore.refundRateScore,
-                    weight: 0.1,
-                },
-                settlementTime: {
-                    score: latestScore.settlementTimeScore,
-                    weight: 0.2,
-                },
-            },
-            metrics: {
-                avgMonthlyRevenue: latestScore.avgMonthlyRevenue,
-                revenueVolatility: latestScore.revenueVolatility,
-                growthPercentageMoM: latestScore.growthPercentageMoM,
-                refundRatePercentage: latestScore.refundRatePercentage,
-                avgSettlementDays: latestScore.avgSettlementDays,
-                transactionCount3m: latestScore.transactionCount3m,
-            },
-            explanation,
-            recommendation,
-            calculatedAt: latestScore.calculationDate,
-        };
-
+        // ✅ Langsung baca explanation & recommendation dari DB
+        // Sudah di-generate + disimpan saat saveCreditScore() dipanggil (cron/trigger)
+        // Tidak perlu re-call Qwen setiap request → hemat biaya API + response lebih cepat
         res.json({
             success: true,
-            data: detail,
+            data: {
+                score: latestScore.creditScore,
+                riskBand: latestScore.riskBand,
+                estimatedMinLimit: latestScore.estimatedMinLimit,
+                estimatedMaxLimit: latestScore.estimatedMaxLimit,
+                components: {
+                    transactionVolume: { score: latestScore.transactionVolumeScore, weight: 0.25 },
+                    revenueConsistency: { score: latestScore.revenueConsistencyScore, weight: 0.25 },
+                    growthTrend: { score: latestScore.growthTrendScore, weight: 0.2 },
+                    refundRate: { score: latestScore.refundRateScore, weight: 0.1 },
+                    settlementTime: { score: latestScore.settlementTimeScore, weight: 0.2 },
+                },
+                metrics: {
+                    avgMonthlyRevenue: latestScore.avgMonthlyRevenue,
+                    revenueVolatility: latestScore.revenueVolatility,
+                    growthPercentageMoM: latestScore.growthPercentageMoM,
+                    refundRatePercentage: latestScore.refundRatePercentage,
+                    avgSettlementDays: latestScore.avgSettlementDays,
+                    transactionCount3m: latestScore.transactionCount3m,
+                },
+                // Bisa null jika Qwen gagal saat kalkulasi — FE harus handle gracefully
+                explanation: latestScore.qwenExplanation ?? null,
+                recommendation: latestScore.qwenRecommendation ?? null,
+                calculatedAt: latestScore.calculationDate,
+            },
         });
     } catch (error) {
         logger.error(`Get credit detail error: ${error.message}`);
+        next(error);
+    }
+});
+
+/**
+ * @swagger
+ * /api/merchant/recalculate:
+ *   post:
+ *     summary: Trigger manual credit score recalculation
+ *     description: |
+ *       Hitung ulang credit score sekarang beserta AI explanation.
+ *       Biasanya dipanggil otomatis oleh cron job setiap malam.
+ *       Endpoint ini untuk trigger manual jika diperlukan.
+ *     tags:
+ *       - Merchant
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Recalculation completed
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               message: Credit score berhasil dikalkulasi ulang
+ *               data:
+ *                 creditScore: 82
+ *                 riskBand: Low
+ *                 calculatedAt: "2026-03-01T00:00:00.000Z"
+ *       404:
+ *         description: Tidak ada data transaksi
+ *       401:
+ *         description: Unauthorized
+ */
+router.post("/recalculate", authenticateToken, async (req, res, next) => {
+    try {
+        const merchant = await Merchant.findOne({ where: { userId: req.user.userId } });
+        if (!merchant) {
+            return res.status(404).json({ success: false, message: "Merchant tidak ditemukan" });
+        }
+
+        // ✅ Ini cara manggil calculateAndSaveCreditScore:
+        // 1. Hitung semua metrics dari Transaction & DailyRevenue
+        // 2. Generate Qwen explanation
+        // 3. INSERT 1 row baru di credit_scores (historical record)
+        const saved = await calculateAndSaveCreditScore(merchant.merchantId);
+
+        if (!saved) {
+            return res.status(404).json({
+                success: false,
+                message: "Tidak ada data transaksi untuk menghitung credit score",
+            });
+        }
+
+        res.json({
+            success: true,
+            message: "Credit score berhasil dikalkulasi ulang",
+            data: {
+                creditScore: saved.creditScore,
+                riskBand: saved.riskBand,
+                calculatedAt: saved.calculationDate,
+            },
+        });
+    } catch (error) {
+        logger.error(`Recalculate credit score error: ${error.message}`);
         next(error);
     }
 });
@@ -323,7 +342,8 @@ router.get("/credit-detail", authenticateToken, async (req, res, next) => {
  *   get:
  *     summary: Get smart loan timing recommendation
  *     description: Get AI-powered recommendation for optimal loan application timing
- *     tags: [Merchant]
+ *     tags:
+ *       - Merchant
  *     security:
  *       - BearerAuth: []
  *     responses:
@@ -334,15 +354,19 @@ router.get("/credit-detail", authenticateToken, async (req, res, next) => {
  *             schema:
  *               type: object
  *               properties:
- *                 success: { type: boolean }
+ *                 success:
+ *                   type: boolean
  *                 data:
  *                   type: object
  *                   properties:
- *                     recommendedWeek: { type: integer }
- *                     confidence: { type: number }
- *                     reasoning: { type: string }
- *                     estimatedMinLimit: { type: number }
- *                     estimatedMaxLimit: { type: number }
+ *                     recommended_week:
+ *                       type: integer
+ *                     confidence:
+ *                       type: number
+ *                     reasoning:
+ *                       type: string
+ *                     date_range:
+ *                       type: string
  *       401:
  *         description: Unauthorized
  */
@@ -350,13 +374,9 @@ router.get("/loan-timing", authenticateToken, async (req, res, next) => {
     try {
         const merchant = await Merchant.findOne({ where: { userId: req.user.userId } });
         if (!merchant) {
-            return res.status(404).json({
-                success: false,
-                message: "Merchant tidak ditemukan",
-            });
+            return res.status(404).json({ success: false, message: "Merchant tidak ditemukan" });
         }
 
-        // Get last 30 days of daily revenue data
         const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
         const dailyRevenues = await DailyRevenue.findAll({
             where: {
@@ -372,50 +392,32 @@ router.get("/loan-timing", authenticateToken, async (req, res, next) => {
                 success: true,
                 data: {
                     message: "Data transaksi belum cukup untuk rekomendasi",
-                    recommendedWeek: null,
+                    recommended_week: null,
                     confidence: 0,
                 },
             });
         }
 
-        // Calculate metrics for AI
         const revenues = dailyRevenues.map((r) => parseFloat(r.totalAmount));
-        const avgMonthlyRevenue = (revenues.reduce((a, b) => a + b, 0) / dailyRevenues.length) * Math.ceil(30 / dailyRevenues.length);
-        const variance = revenues.reduce((sum, r) => sum + Math.pow(r - revenues.reduce((a, b) => a + b) / revenues.length, 2), 0) / revenues.length;
-        const volatility = Math.sqrt(variance) / (revenues.reduce((a, b) => a + b) / revenues.length);
+        const totalRevenue = revenues.reduce((a, b) => a + b, 0);
+        const avgRevenue = totalRevenue / revenues.length;
+        const variance = revenues.reduce((sum, r) => sum + Math.pow(r - avgRevenue, 2), 0) / revenues.length;
+        const volatility = avgRevenue !== 0 ? Math.sqrt(variance) / avgRevenue : 0;
+        const avgMonthlyRevenue = (totalRevenue / dailyRevenues.length) * 30;
 
-        // Detect pattern
         let pattern = "Stable";
         if (volatility > 0.3) pattern = "High Volatility";
         else if (volatility > 0.15) pattern = "Moderate Volatility";
 
-        try {
-            const timing = await generateLoanTiming({
-                merchantId: merchant.merchantId,
-                dailyRevenues: revenues.slice(0, 7),
-                avgMonthlyRevenue,
-                volatility: volatility * 100,
-                pattern,
-            });
+        const timing = await generateLoanTiming({
+            merchantId: merchant.merchantId,
+            dailyRevenues: revenues.slice(0, 7),
+            avgMonthlyRevenue,
+            volatility: volatility * 100,
+            pattern,
+        });
 
-            res.json({
-                success: true,
-                data: {
-                    ...timing,
-                },
-            });
-        } catch (aiError) {
-            logger.warn(`AI loan timing failed: ${aiError.message}`);
-            res.json({
-                success: true,
-                data: {
-                    recommendedWeek: 2,
-                    confidence: 60,
-                    reasoning: "Rekomendasi berbasis pola dasar",
-                    dateRange: "Minggu ke-2 bulan berikutnya",
-                },
-            });
-        }
+        res.json({ success: true, data: timing });
     } catch (error) {
         logger.error(`Get loan timing error: ${error.message}`);
         next(error);
@@ -428,7 +430,8 @@ router.get("/loan-timing", authenticateToken, async (req, res, next) => {
  *   get:
  *     summary: Get active early warning alerts
  *     description: Retrieve all active alerts for the merchant
- *     tags: [Merchant]
+ *     tags:
+ *       - Merchant
  *     security:
  *       - BearerAuth: []
  *     responses:
@@ -439,14 +442,19 @@ router.get("/loan-timing", authenticateToken, async (req, res, next) => {
  *             schema:
  *               type: object
  *               properties:
- *                 success: { type: boolean }
+ *                 success:
+ *                   type: boolean
  *                 data:
  *                   type: object
  *                   properties:
- *                     totalAlerts: { type: integer }
- *                     criticalCount: { type: integer }
- *                     mediumCount: { type: integer }
- *                     lowCount: { type: integer }
+ *                     totalAlerts:
+ *                       type: integer
+ *                     criticalCount:
+ *                       type: integer
+ *                     mediumCount:
+ *                       type: integer
+ *                     lowCount:
+ *                       type: integer
  *                     alerts:
  *                       type: array
  *                       items:
@@ -458,10 +466,7 @@ router.get("/alerts", authenticateToken, async (req, res, next) => {
     try {
         const merchant = await Merchant.findOne({ where: { userId: req.user.userId } });
         if (!merchant) {
-            return res.status(404).json({
-                success: false,
-                message: "Merchant tidak ditemukan",
-            });
+            return res.status(404).json({ success: false, message: "Merchant tidak ditemukan" });
         }
 
         const alerts = await getActiveAlerts(merchant.merchantId);
@@ -538,19 +543,12 @@ router.get("/product-insights", authenticateToken, async (req, res, next) => {
     try {
         const merchant = await Merchant.findOne({ where: { userId: req.user.userId } });
         if (!merchant) {
-            return res.status(404).json({
-                success: false,
-                message: "Merchant tidak ditemukan",
-            });
+            return res.status(404).json({ success: false, message: "Merchant tidak ditemukan" });
         }
 
-        // Memanggil fungsi yang sudah Anda buat di qwenService.js
         const insights = await generateMerchantGrowthInsights(merchant.merchantId);
 
-        res.json({
-            success: true,
-            data: insights,
-        });
+        res.json({ success: true, data: insights });
     } catch (error) {
         next(error);
     }
