@@ -67,16 +67,16 @@ jobs:
             - name: Setup SSH key
               run: |
                   mkdir -p ~/.ssh
-                  
+
                   # 1. Decode Base64 ke file (Menggunakan printf agar lebih aman)
                   printf "%s" "${{ secrets.SWARM_MASTER_SSH_KEY }}" | base64 -d > ~/.ssh/swarm_key
-                  
+
                   # 2. [PENTING] Tambahkan baris baru di akhir file (Obat error libcrypto)
                   echo "" >> ~/.ssh/swarm_key
-                  
+
                   # 3. Atur permission (Wajib 600)
                   chmod 600 ~/.ssh/swarm_key
-                  
+
                   # 4. Validasi (Cek apakah depannya benar format Key, tanpa menampilkan isinya)
                   if head -n 1 ~/.ssh/swarm_key | grep -q "BEGIN"; then
                     echo "✅ SSH Key format looks correct (Header found)."
@@ -112,6 +112,7 @@ jobs:
                       --with-registry-auth \
                       --env-add NODE_ENV=production \
                       --env-add BASE_URL=${{ secrets.BASE_URL }} \
+                      --env-add FRONTEND_URL=${{ secrets.FRONTEND_URL }} \
                       --env-add DB_HOST=my-postgres \
                       --env-add DB_PORT=5432 \
                       --env-add DB_NAME=${{ secrets.DB_NAME }} \
@@ -119,6 +120,8 @@ jobs:
                       --env-add DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
                       --env-add JWT_ACCESS_TOKEN_SECRET=${{ secrets.JWT_ACCESS_TOKEN_SECRET }} \
                       --env-add JWT_REFRESH_TOKEN_SECRET=${{ secrets.JWT_REFRESH_TOKEN_SECRET }} \
+                      --env-add JWT_ACCESS_TOKEN_EXPIRY=${{ secrets.JWT_ACCESS_TOKEN_EXPIRY }} \
+                      --env-add JWT_REFRESH_TOKEN_EXPIRY=${{ secrets.JWT_REFRESH_TOKEN_EXPIRY }} \
                       --env-add QWEN_API_KEY=${{ secrets.QWEN_API_KEY }} \
                       --env-add MID=${{ secrets.MID }} \
                       --env-add PRIVATE_KEY=${{ secrets.PRIVATE_KEY }} \
@@ -141,6 +144,7 @@ jobs:
                       --label "traefik.http.services.paybaba.loadbalancer.server.port=3000" \
                       --env NODE_ENV=production \
                       --env BASE_URL=${{ secrets.BASE_URL }} \
+                      --env FRONTEND_URL=${{ secrets.FRONTEND_URL }} \
                       --env DB_HOST=my-postgres \
                       --env DB_PORT=5432 \
                       --env DB_NAME=${{ secrets.DB_NAME }} \
@@ -148,6 +152,8 @@ jobs:
                       --env DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
                       --env JWT_ACCESS_TOKEN_SECRET=${{ secrets.JWT_ACCESS_TOKEN_SECRET }} \
                       --env JWT_REFRESH_TOKEN_SECRET=${{ secrets.JWT_REFRESH_TOKEN_SECRET }} \
+                      --env JWT_ACCESS_TOKEN_EXPIRY=${{ secrets.JWT_ACCESS_TOKEN_EXPIRY }} \
+                      --env JWT_REFRESH_TOKEN_EXPIRY=${{ secrets.JWT_REFRESH_TOKEN_EXPIRY }} \
                       --env QWEN_API_KEY=${{ secrets.QWEN_API_KEY }} \
                       --env MID=${{ secrets.MID }} \
                       --env PRIVATE_KEY=${{ secrets.PRIVATE_KEY }} \
