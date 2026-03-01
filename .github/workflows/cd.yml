@@ -95,39 +95,42 @@ jobs:
 
                   # === CONFIGURATION ===
                   SERVICE_NAME="paybaba-api"
-                  # Kita pakai tag spesifik SHA commit agar pasti versi terbaru yang terdeploy
                   IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
                   DOMAIN="${{ env.APP_DOMAIN }}"
 
                   echo "🚀 Starting Deployment for $SERVICE_NAME"
 
-                  # Login Docker di Server (Penting untuk Private Repo)
+                  # Login Docker
                   echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
-                  # Logic Create/Update Service
+                  # Cek apakah service sudah ada
                   if docker service ls --format '{{.Name}}' | grep -q "^$SERVICE_NAME$"; then
                     echo "♻️  Updating existing service..."
+                    
+                    # Update service dengan image baru dan env vars baru
+                    # Perhatikan penggunaan backslash (\) di akhir baris harus bersih tanpa spasi
                     docker service update \
                       --image $IMAGE \
                       --with-registry-auth \
+                      --force \
                       --env-add NODE_ENV=production \
-                      --env-add BASE_URL=${{ secrets.BASE_URL }} \
-                      --env-add FRONTEND_URL=${{ secrets.FRONTEND_URL }} \
+                      --env-add BASE_URL="${{ secrets.BASE_URL }}" \
+                      --env-add FRONTEND_URL="${{ secrets.FRONTEND_URL }}" \
                       --env-add DB_HOST=my-postgres \
                       --env-add DB_PORT=5432 \
-                      --env-add DB_NAME=${{ secrets.DB_NAME }} \
-                      --env-add DB_USER=${{ secrets.DB_USER }} \
-                      --env-add DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
-                      --env-add JWT_ACCESS_TOKEN_SECRET=${{ secrets.JWT_ACCESS_TOKEN_SECRET }} \
-                      --env-add JWT_REFRESH_TOKEN_SECRET=${{ secrets.JWT_REFRESH_TOKEN_SECRET }} \
-                      --env-add JWT_ACCESS_TOKEN_EXPIRY=${{ secrets.JWT_ACCESS_TOKEN_EXPIRY }} \
-                      --env-add JWT_REFRESH_TOKEN_EXPIRY=${{ secrets.JWT_REFRESH_TOKEN_EXPIRY }} \
-                      --env-add QWEN_API_KEY=${{ secrets.QWEN_API_KEY }} \
-                      --env-add MID=${{ secrets.MID }} \
-                      --env-add PRIVATE_KEY=${{ secrets.PRIVATE_KEY }} \
-                      --env-add PUBLIC_KEY=${{ secrets.PUBLIC_KEY }} \
-                      --env-add PAYLABS_SERVER=${{ secrets.PAYLABS_SERVER }} \
-                      --env-add NOTIFY_URL=${{ secrets.NOTIFY_URL }} \
+                      --env-add DB_NAME="${{ secrets.DB_NAME }}" \
+                      --env-add DB_USER="${{ secrets.DB_USER }}" \
+                      --env-add DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
+                      --env-add JWT_ACCESS_TOKEN_SECRET="${{ secrets.JWT_ACCESS_TOKEN_SECRET }}" \
+                      --env-add JWT_REFRESH_TOKEN_SECRET="${{ secrets.JWT_REFRESH_TOKEN_SECRET }}" \
+                      --env-add JWT_ACCESS_TOKEN_EXPIRY="${{ secrets.JWT_ACCESS_TOKEN_EXPIRY }}" \
+                      --env-add JWT_REFRESH_TOKEN_EXPIRY="${{ secrets.JWT_REFRESH_TOKEN_EXPIRY }}" \
+                      --env-add QWEN_API_KEY="${{ secrets.QWEN_API_KEY }}" \
+                      --env-add MID="${{ secrets.MID }}" \
+                      --env-add PRIVATE_KEY="${{ secrets.PRIVATE_KEY }}" \
+                      --env-add PUBLIC_KEY="${{ secrets.PUBLIC_KEY }}" \
+                      --env-add PAYLABS_SERVER="${{ secrets.PAYLABS_SERVER }}" \
+                      --env-add NOTIFY_URL="${{ secrets.NOTIFY_URL }}" \
                       $SERVICE_NAME
                   else
                     echo "✨ Creating new service..."
@@ -143,32 +146,29 @@ jobs:
                       --label "traefik.http.routers.paybaba.tls.certresolver=myresolver" \
                       --label "traefik.http.services.paybaba.loadbalancer.server.port=3000" \
                       --env NODE_ENV=production \
-                      --env BASE_URL=${{ secrets.BASE_URL }} \
-                      --env FRONTEND_URL=${{ secrets.FRONTEND_URL }} \
+                      --env BASE_URL="${{ secrets.BASE_URL }}" \
+                      --env FRONTEND_URL="${{ secrets.FRONTEND_URL }}" \
                       --env DB_HOST=my-postgres \
                       --env DB_PORT=5432 \
-                      --env DB_NAME=${{ secrets.DB_NAME }} \
-                      --env DB_USER=${{ secrets.DB_USER }} \
-                      --env DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
-                      --env JWT_ACCESS_TOKEN_SECRET=${{ secrets.JWT_ACCESS_TOKEN_SECRET }} \
-                      --env JWT_REFRESH_TOKEN_SECRET=${{ secrets.JWT_REFRESH_TOKEN_SECRET }} \
-                      --env JWT_ACCESS_TOKEN_EXPIRY=${{ secrets.JWT_ACCESS_TOKEN_EXPIRY }} \
-                      --env JWT_REFRESH_TOKEN_EXPIRY=${{ secrets.JWT_REFRESH_TOKEN_EXPIRY }} \
-                      --env QWEN_API_KEY=${{ secrets.QWEN_API_KEY }} \
-                      --env MID=${{ secrets.MID }} \
-                      --env PRIVATE_KEY=${{ secrets.PRIVATE_KEY }} \
-                      --env PUBLIC_KEY=${{ secrets.PUBLIC_KEY }} \
-                      --env PAYLABS_SERVER=${{ secrets.PAYLABS_SERVER }} \
-                      --env NOTIFY_URL=${{ secrets.NOTIFY_URL }} \
+                      --env DB_NAME="${{ secrets.DB_NAME }}" \
+                      --env DB_USER="${{ secrets.DB_USER }}" \
+                      --env DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
+                      --env JWT_ACCESS_TOKEN_SECRET="${{ secrets.JWT_ACCESS_TOKEN_SECRET }}" \
+                      --env JWT_REFRESH_TOKEN_SECRET="${{ secrets.JWT_REFRESH_TOKEN_SECRET }}" \
+                      --env JWT_ACCESS_TOKEN_EXPIRY="${{ secrets.JWT_ACCESS_TOKEN_EXPIRY }}" \
+                      --env JWT_REFRESH_TOKEN_EXPIRY="${{ secrets.JWT_REFRESH_TOKEN_EXPIRY }}" \
+                      --env QWEN_API_KEY="${{ secrets.QWEN_API_KEY }}" \
+                      --env MID="${{ secrets.MID }}" \
+                      --env PRIVATE_KEY="${{ secrets.PRIVATE_KEY }}" \
+                      --env PUBLIC_KEY="${{ secrets.PUBLIC_KEY }}" \
+                      --env PAYLABS_SERVER="${{ secrets.PAYLABS_SERVER }}" \
+                      --env NOTIFY_URL="${{ secrets.NOTIFY_URL }}" \
                       $IMAGE
                   fi
 
-                  # Force update service untuk menarik image terbaru jika pakai tag :latest
-                  docker service update --force $SERVICE_NAME
-
-                  echo "✅ Deployment command sent. Waiting for stability..."
-                  sleep 10
-                  docker service ps $SERVICE_NAME --no-trunc
+                  echo "✅ Deployment command sent. Verifying..."
+                  sleep 5
+                  docker service ps $SERVICE_NAME --no-trunc | head -n 5
                   EOF
 
             - name: Cleanup Key
