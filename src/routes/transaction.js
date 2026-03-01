@@ -4,18 +4,39 @@ import { validateRequest, createTransactionSchema } from "../utils/validators.js
 import Merchant from "../models/Merchant.js";
 import Transaction from "../models/Transaction.js";
 import DailyRevenue from "../models/DailyRevenue.js";
-import { v4 as uuidv4 } from "uuid";
 import logger from "../utils/logger.js";
+import { PaylabsClient } from "../utils/Paylabs.js";
 
 const router = express.Router();
 
+/* ================================
+   PAYLABS INIT
+================================ */
+const paylabs = new PaylabsClient({
+    server: process.env.PAYLABS_SERVER || "SIT",
+    mid: process.env.MID,
+    privateKey: process.env.PRIVATE_KEY,
+    publicKey: process.env.PUBLIC_KEY,
+    log: process.env.NODE_ENV !== "production",
+});
+
+/* =====================================================
+   CREATE TRANSACTION
+===================================================== */
 /**
  * @swagger
  * /api/transactions/create:
  *   post:
- *     summary: Create new transaction
- *     description: Create QRIS or CASH transaction
- *     tags: [Transactions]
+ *     summary: Create new transaction (QRIS or CASH)
+ *     description: |
+ *       Create a new transaction.
+ *
+ *       - If type = QRIS → will generate QRIS via Paylabs API.
+ *       - If type = CASH → will record transaction as Success immediately.
+ *
+ *       For QRIS, productInfo will be stored in metadata in database.
+ *     tags:
+ *       - Transactions
  *     security:
  *       - BearerAuth: []
  *     requestBody:
@@ -24,54 +45,145 @@ const router = express.Router();
  *         application/json:
  *           schema:
  *             type: object
- *             required: [type, amount]
+ *             required:
+ *               - type
+ *               - amount
  *             properties:
  *               type:
  *                 type: string
- *                 enum: [QRIS, CASH]
+ *                 enum:
+ *                   - QRIS
+ *                   - CASH
  *                 example: QRIS
  *               amount:
  *                 type: number
  *                 minimum: 1000
- *                 example: 50000
+ *                 example: 10000
  *               description:
  *                 type: string
- *                 example: Pembayaran order #123
+ *                 example: Pembayaran Order #INV-001
  *               productName:
  *                 type: string
- *                 example: Produk ABC
+ *                 example: Paket Premium
  *               productInfo:
- *                 type: object
- *                 description: Detailed product information
- *                 example:
- *                   sku: SKU-001
- *                   name: Smartphone X
- *                   category: Electronics
- *                   quantity: 2
- *                   unitPrice: 25000
- *                   details: Smartphone X - Color Blue
- *                   merchant: ABC Store
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - id
+ *                     - name
+ *                     - price
+ *                     - quantity
+ *                     - type
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       example: ITEM1
+ *                     name:
+ *                       type: string
+ *                       example: Paket Premium
+ *                     price:
+ *                       type: number
+ *                       example: 10000
+ *                     quantity:
+ *                       type: integer
+ *                       example: 1
+ *                     type:
+ *                       type: string
+ *                       example: General
+ *                     url:
+ *                       type: string
+ *                       example: https://paybaba.id/product/1
+ *           example:
+ *             type: QRIS
+ *             amount: 10000
+ *             description: Pembayaran Order #INV-001
+ *             productName: Paket Premium
+ *             productInfo:
+ *               - id: ITEM1
+ *                 name: Paket Premium
+ *                 price: 10000
+ *                 quantity: 1
+ *                 type: General
+ *                 url: https://paybaba.id/product/1
  *     responses:
  *       201:
- *         description: Transaction created
+ *         description: Transaction created successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 success: { type: boolean }
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Transaksi QRIS berhasil dibuat
  *                 data:
  *                   type: object
  *                   properties:
- *                     transactionId: { type: string }
- *                     amount: { type: number }
- *                     status: { type: string }
+ *                     transactionId:
+ *                       type: string
+ *                       example: TXN1719999999999
+ *                     amount:
+ *                       type: string
+ *                       example: "10000.00"
+ *                     status:
+ *                       type: string
+ *                       enum:
+ *                         - Pending
+ *                         - Success
+ *                         - Failed
+ *                       example: Pending
+ *                     qrCode:
+ *                       type: string
+ *                       example: 00020101021126690011ID.CO.QRIS.WWW...
+ *                     qrisUrl:
+ *                       type: string
+ *                       example: https://sit-api.paylabs.co.id/payment/qr/img?url=xxxx
+ *                     expiredTime:
+ *                       type: string
+ *                       example: "20260301120000"
+ *                     productInfo:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *       400:
+ *         description: Validation error or Paylabs error
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: false
+ *               message: Paylabs Error: paramInvalid
  *       401:
  *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: false
+ *               message: Unauthorized
+ *       404:
+ *         description: Merchant not found
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: false
+ *               message: Merchant tidak ditemukan
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: false
+ *               message: Internal Server Error
  */
-router.post("/create", authenticateToken, validateRequest(createTransactionSchema), async (req, res, next) => {
+router.post("/create", authenticateToken, validateRequest(createTransactionSchema), async (req, res) => {
     try {
-        const merchant = await Merchant.findOne({ where: { userId: req.user.userId } });
+        const merchant = await Merchant.findOne({
+            where: { userId: req.user.userId },
+        });
+
         if (!merchant) {
             return res.status(404).json({
                 success: false,
@@ -81,34 +193,89 @@ router.post("/create", authenticateToken, validateRequest(createTransactionSchem
 
         const { type, amount, description, productName, productInfo } = req.validatedData;
 
-        // Generate transaction ID
-        const transactionId = `TXN${Date.now()}${Math.random().toString(36).substr(2, 9)}`;
+        const transactionId = `TXN${Date.now()}`;
 
         if (type === "QRIS") {
-            // TODO: Call Paylabs QRIS API
-            // For now, create pending transaction
+            const paylabsPath = "/payment/v2.3/qris/create";
+
+            // ===== FORMAT PRODUCT INFO SESUAI DOC =====
+            const formattedProductInfo =
+                productInfo && productInfo.length > 0
+                    ? productInfo.map((item, index) => ({
+                          id: (item.id || `ITEM${index + 1}`).toString(),
+                          name: item.name || productName || "Product",
+                          price: parseFloat(item.price || amount).toFixed(2),
+                          type: item.type || "General",
+                          quantity: item.quantity || 1,
+                          url: item.url || "https://paybaba.id",
+                      }))
+                    : [
+                          {
+                              id: "ITEM1",
+                              name: productName || "Payment",
+                              price: parseFloat(amount).toFixed(2),
+                              type: "General",
+                              quantity: 1,
+                              url: "https://paybaba.id",
+                          },
+                      ];
+
+            // ===== PAYLOAD SESUAI DOKUMENTASI =====
+            const payload = {
+                merchantId: process.env.MID,
+                paymentType: "QRIS",
+                amount: parseFloat(amount).toFixed(2),
+                productName: productName || "Payment",
+                notifyUrl: process.env.NOTIFY_URL,
+                productInfo: formattedProductInfo,
+            };
+
+            // ⚠️ PENTING: requestId & merchantTradeNo dikirim via opts
+            const response = await paylabs.request(paylabsPath, payload, {
+                requestId: transactionId,
+                merchantTradeNo: transactionId,
+            });
+
+            if (response.errCode !== "0") {
+                logger.error(`Paylabs Error: ${JSON.stringify(response)}`);
+                return res.status(400).json({
+                    success: false,
+                    message: `Paylabs Error: ${response.errCodeDes || response.errCode}`,
+                });
+            }
+
+            // ===== SIMPAN KE DB (productInfo masuk metadata) =====
             const transaction = await Transaction.create({
                 transactionId,
                 merchantId: merchant.merchantId,
                 amount,
                 paymentMethod: "QRIS",
                 status: "Pending",
-                metadata: { productInfo, description },
-            });
-
-            res.status(201).json({
-                success: true,
-                message: "Transaksi QRIS dibuat",
-                data: {
-                    transactionId: transaction.transactionId,
-                    amount: transaction.amount,
-                    status: transaction.status,
-                    qrCode: "mock-qr-code", // From Paylabs
-                    qrisUrl: "https://qr.example.com/xxx",
+                metadata: {
+                    description,
+                    paylabsRef: response.platformTradeNo,
+                    qrString: response.qrCode,
+                    productInfo: formattedProductInfo,
                 },
             });
-        } else if (type === "CASH") {
-            // Cash transaction - auto complete
+
+            return res.status(201).json({
+                success: true,
+                message: "Transaksi QRIS berhasil dibuat",
+                data: {
+                    transactionId,
+                    amount: response.amount,
+                    status: response.status,
+                    qrCode: response.qrCode,
+                    qrisUrl: response.qrisUrl,
+                    expiredTime: response.expiredTime,
+                    productInfo: formattedProductInfo,
+                },
+            });
+        }
+
+        // ===== CASH FLOW =====
+        if (type === "CASH") {
             const transaction = await Transaction.create({
                 transactionId,
                 merchantId: merchant.merchantId,
@@ -116,121 +283,83 @@ router.post("/create", authenticateToken, validateRequest(createTransactionSchem
                 paymentMethod: "CASH",
                 status: "Success",
                 settlementDate: new Date(),
-                settlementTime: new Date().toTimeString().split(" ")[0],
-                metadata: { description },
+                metadata: {
+                    description,
+                    productInfo,
+                },
             });
 
-            // Update daily revenue
             const today = new Date().toISOString().split("T")[0];
-            await DailyRevenue.create(
-                {
+
+            await DailyRevenue.findOrCreate({
+                where: {
                     merchantId: merchant.merchantId,
                     transactionDate: today,
+                },
+                defaults: {
+                    totalAmount: 0,
+                    transactionCount: 0,
+                    successfulCount: 0,
+                },
+            }).then(async ([daily]) => {
+                await daily.increment({
                     totalAmount: amount,
                     transactionCount: 1,
                     successfulCount: 1,
-                },
-                { ignoreDuplicates: false },
-            ).catch(async () => {
-                // If duplicate, upsert
-                const daily = await DailyRevenue.findOne({
-                    where: { merchantId: merchant.merchantId, transactionDate: today },
                 });
-                if (daily) {
-                    await daily.update({
-                        totalAmount: daily.totalAmount.add(amount),
-                        transactionCount: daily.transactionCount + 1,
-                        successfulCount: daily.successfulCount + 1,
-                    });
-                }
             });
 
-            res.status(201).json({
+            return res.status(201).json({
                 success: true,
                 message: "Transaksi CASH berhasil dicatat",
-                data: {
-                    transactionId: transaction.transactionId,
-                    amount: transaction.amount,
-                    status: transaction.status,
-                    settlementDate: transaction.settlementDate,
-                },
+                data: transaction,
             });
         }
     } catch (error) {
         logger.error(`Create transaction error: ${error.message}`);
-        next(error);
+        return res.status(500).json({
+            success: false,
+            message: error.message,
+        });
     }
 });
 
+/* =====================================================
+   GET LIST
+===================================================== */
 /**
  * @swagger
  * /api/transactions:
  *   get:
- *     summary: Get transaction list
- *     description: Retrieve transactions with pagination
- *     tags: [Transactions]
+ *     summary: Get transactions list
+ *     tags:
+ *       - Transactions
  *     security:
  *       - BearerAuth: []
- *     parameters:
- *       - in: query
- *         name: page
- *         schema:
- *           type: integer
- *           default: 1
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *           default: 20
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
- *           enum: [Success, Pending, Failed, Refunded]
- *       - in: query
- *         name: type
- *         schema:
- *           type: string
- *           enum: [QRIS, CASH]
  *     responses:
  *       200:
- *         description: Transactions retrieved
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success: { type: boolean }
- *                 data:
- *                   type: array
- *                   items:
- *                     type: object
- *                 pagination:
- *                   type: object
- *       401:
- *         description: Unauthorized
+ *         description: Success
  */
-router.get("/", authenticateToken, async (req, res, next) => {
+router.get("/", authenticateToken, async (req, res) => {
     try {
-        const merchant = await Merchant.findOne({ where: { userId: req.user.userId } });
-        if (!merchant) {
+        const merchant = await Merchant.findOne({
+            where: { userId: req.user.userId },
+        });
+
+        if (!merchant)
             return res.status(404).json({
                 success: false,
                 message: "Merchant tidak ditemukan",
             });
-        }
 
-        const { page = 1, limit = 20, status, type } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
         const offset = (page - 1) * limit;
 
-        const where = { merchantId: merchant.merchantId };
-        if (status) where.status = status;
-        if (type) where.paymentMethod = type;
-
         const { count, rows } = await Transaction.findAndCountAll({
-            where,
-            order: [["transactionDate", "DESC"]],
-            limit: parseInt(limit),
+            where: { merchantId: merchant.merchantId },
+            order: [["createdAt", "DESC"]],
+            limit,
             offset,
         });
 
@@ -239,24 +368,29 @@ router.get("/", authenticateToken, async (req, res, next) => {
             data: rows,
             pagination: {
                 total: count,
-                page: parseInt(page),
-                limit: parseInt(limit),
+                page,
+                limit,
                 pages: Math.ceil(count / limit),
             },
         });
     } catch (error) {
-        logger.error(`Get transactions error: ${error.message}`);
-        next(error);
+        res.status(500).json({
+            success: false,
+            message: error.message,
+        });
     }
 });
 
+/* =====================================================
+   CHECK STATUS
+===================================================== */
 /**
  * @swagger
- * /api/transactions/{id}:
+ * /api/transactions/{id}/check-status:
  *   get:
- *     summary: Get transaction detail
- *     description: Retrieve detailed information of a specific transaction
- *     tags: [Transactions]
+ *     summary: Check transaction status to Paylabs
+ *     tags:
+ *       - Transactions
  *     security:
  *       - BearerAuth: []
  *     parameters:
@@ -265,122 +399,76 @@ router.get("/", authenticateToken, async (req, res, next) => {
  *         required: true
  *         schema:
  *           type: string
- *         example: TXN123456789
  *     responses:
  *       200:
- *         description: Transaction details retrieved
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success: { type: boolean }
- *                 data:
- *                   type: object
- *       401:
- *         description: Unauthorized
+ *         description: Status updated
  *       404:
- *         description: Transaction not found
+ *         description: Not found
  */
-router.get("/:id", authenticateToken, async (req, res, next) => {
+router.get("/:id/check-status", authenticateToken, async (req, res) => {
     try {
-        const merchant = await Merchant.findOne({ where: { userId: req.user.userId } });
-        if (!merchant) {
+        const merchant = await Merchant.findOne({
+            where: { userId: req.user.userId },
+        });
+
+        if (!merchant)
             return res.status(404).json({
                 success: false,
                 message: "Merchant tidak ditemukan",
             });
-        }
 
         const transaction = await Transaction.findOne({
-            where: { transactionId: req.params.id, merchantId: merchant.merchantId },
+            where: {
+                transactionId: req.params.id,
+                merchantId: merchant.merchantId,
+            },
         });
 
-        if (!transaction) {
+        if (!transaction)
             return res.status(404).json({
                 success: false,
                 message: "Transaksi tidak ditemukan",
+            });
+
+        if (transaction.paymentMethod === "CASH") {
+            return res.json({
+                success: true,
+                data: { status: transaction.status },
+            });
+        }
+
+        const response = await paylabs.request("/payment/v2.3/qris/query", {
+            merchantId: process.env.MID,
+            merchantTradeNo: transaction.transactionId,
+            requestId: `REQ-${Date.now()}`,
+            paymentType: "QRIS",
+        });
+
+        let newStatus = transaction.status;
+
+        if (response.status === "02") newStatus = "Success";
+        if (response.status === "09") newStatus = "Failed";
+
+        if (transaction.status !== newStatus) {
+            await transaction.update({
+                status: newStatus,
+                settlementDate: newStatus === "Success" ? new Date() : transaction.settlementDate,
             });
         }
 
         res.json({
             success: true,
-            data: transaction,
+            data: {
+                transactionId: transaction.transactionId,
+                status: newStatus,
+                paylabsStatus: response.status,
+            },
         });
     } catch (error) {
-        logger.error(`Get transaction detail error: ${error.message}`);
-        next(error);
-    }
-});
-
-/**
- * @swagger
- * /api/webhook/paylabs:
- *   post:
- *     summary: Paylabs webhook
- *     description: Receive payment status callback from Paylabs
- *     tags: [Webhooks]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               merchantTradeNo:
- *                 type: string
- *                 example: TXN123456789
- *               status:
- *                 type: string
- *                 example: "02"
- *               amount:
- *                 type: number
- *                 example: 50000
- *     responses:
- *       200:
- *         description: Webhook processed
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 merchantId: { type: string }
- *                 requestId: { type: string }
- *                 errCode: { type: string }
- *       404:
- *         description: Transaction not found
- */
-router.post("/webhook/paylabs", async (req, res, next) => {
-    try {
-        // TODO: Verify signature from Paylabs
-        const { merchantTradeNo, status, amount } = req.body;
-
-        const transaction = await Transaction.findOne({
-            where: { transactionId: merchantTradeNo },
+        res.status(500).json({
+            success: false,
+            message: error.message,
         });
-
-        if (!transaction) {
-            return res.status(404).json({
-                success: false,
-                message: "Transaksi tidak ditemukan",
-            });
-        }
-
-        // Update transaction status based on Paylabs callback
-        const newStatus = status === "02" ? "Success" : status === "09" ? "Failed" : "Pending";
-        await transaction.update({ status: newStatus });
-
-        logger.info(`Webhook received for transaction ${merchantTradeNo}: ${newStatus}`);
-
-        // Return required format for Paylabs
-        res.json({
-            merchantId: transaction.merchantId,
-            requestId: merchantTradeNo,
-            errCode: "0",
-        });
-    } catch (error) {
-        logger.error(`Webhook error: ${error.message}`);
-        next(error);
     }
 });
 
