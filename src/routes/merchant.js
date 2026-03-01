@@ -133,6 +133,15 @@ router.get("/dashboard", authenticateToken, async (req, res, next) => {
             order: [["calculationDate", "DESC"]],
         });
 
+        const scoreHistory = await CreditScore.findAll({
+            where: {
+                merchantId: merchant.merchantId,
+                calculationDate: { [Op.gte]: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000) },
+            },
+            order: [["calculationDate", "DESC"]],
+            attributes: ["calculationDate", "creditScore"],
+        });
+
         const monthlyTransactionVolume =
             (await DailyRevenue.sum("totalAmount", {
                 where: {
@@ -164,7 +173,7 @@ router.get("/dashboard", authenticateToken, async (req, res, next) => {
                 refundRate,
                 totalTransactions,
                 avgDailyTransaction: parseFloat((totalTransactions / 30).toFixed(2)),
-                scoreHistory: latestScore ? [{ date: latestScore.calculationDate, score: latestScore.creditScore }] : [],
+                scoreHistory: scoreHistory.map((s) => ({ date: s.calculationDate, score: s.creditScore })),
             },
         });
     } catch (error) {
