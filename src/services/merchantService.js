@@ -1,6 +1,6 @@
 import { Op } from "sequelize";
 import Transaction from "../models/Transaction.js";
-import e from "express";
+// ✅ FIX: hapus unused `import e from "express"`
 
 export const getMerchantProductStats = async (merchantId) => {
     const threeMonthsAgo = new Date();
@@ -26,15 +26,23 @@ export const getMerchantProductStats = async (merchantId) => {
         const monthDiff = (currentMonth - txnMonth + 12) % 12;
         if (monthDiff < 3) monthlySales[2 - monthDiff] += parseFloat(txn.amount);
 
-        // Statistik Produk dari Metadata
-        const info = txn.metadata?.productInfo;
-        if (info && info.name) {
-            const id = info.sku || info.name;
-            if (!productCounts[id]) {
-                productCounts[id] = { name: info.name, sku: info.sku || "N/A", totalQty: 0, count: 0 };
-            }
-            productCounts[id].totalQty += info.quantity || 1;
-            productCounts[id].count += 1;
+        // ✅ FIX: productInfo adalah ARRAY, bukan object langsung
+        const infos = txn.metadata?.productInfo;
+        if (Array.isArray(infos)) {
+            infos.forEach((info) => {
+                if (!info || !info.name) return;
+                const id = info.id || info.name;
+                if (!productCounts[id]) {
+                    productCounts[id] = {
+                        name: info.name,
+                        sku: info.id || "N/A",
+                        totalQty: 0,
+                        count: 0,
+                    };
+                }
+                productCounts[id].totalQty += info.quantity || 1;
+                productCounts[id].count += 1;
+            });
         }
     });
 
@@ -61,31 +69,38 @@ export const calculateRefundRate = async (merchantId) => {
 
     const total = transactions.length;
     const refunded = transactions.filter((t) => t.status === "Refunded").length;
-
     return total > 0 ? (refunded / total) * 100 : 0;
 };
 
 export const calculateMonthlyGrowth = async (merchantId) => {
-    const totalRevenue = await Transaction.sum("amount", {
-        where: {
-            merchantId,
-            status: "Success",
-        },
-    });
+    // ✅ FIX: bandingkan bulan ini vs bulan lalu, bukan allTime vs 3 bulan
+    const now = new Date();
+    const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
-    const threeMonthsAgo = new Date();
-    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+    const thisMonthRevenue =
+        (await Transaction.sum("amount", {
+            where: {
+                merchantId,
+                status: "Success",
+                transactionDate: { [Op.gte]: startOfThisMonth },
+            },
+        })) || 0;
 
-    const pastRevenue = await Transaction.sum("amount", {
-        where: {
-            merchantId,
-            status: "Success",
-            transactionDate: { [Op.gte]: threeMonthsAgo },
-        },
-    });
+    const lastMonthRevenue =
+        (await Transaction.sum("amount", {
+            where: {
+                merchantId,
+                status: "Success",
+                transactionDate: {
+                    [Op.gte]: startOfLastMonth,
+                    [Op.lt]: startOfThisMonth,
+                },
+            },
+        })) || 0;
 
-    if (pastRevenue === 0) return totalRevenue > 0 ? 100 : 0;
-    return ((totalRevenue - pastRevenue) / pastRevenue) * 100;
+    if (lastMonthRevenue === 0) return thisMonthRevenue > 0 ? 100 : 0;
+    return ((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100;
 };
 
 export default {

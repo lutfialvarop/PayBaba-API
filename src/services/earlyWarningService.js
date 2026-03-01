@@ -1,3 +1,4 @@
+import { Op } from "sequelize";
 import logger from "../utils/logger.js";
 import { analyzeAnomaly } from "./qwenService.js";
 import EarlyWarningAlert from "../models/EarlyWarningAlert.js";
@@ -12,27 +13,21 @@ export async function detectAnomalies(merchantId) {
     try {
         const alerts = [];
 
-        // 1. Revenue Drop Detection
         const revenueDrop = await detectRevenueDropAnomaly(merchantId);
         if (revenueDrop) alerts.push(revenueDrop);
 
-        // 2. Refund Spike Detection
         const refundSpike = await detectRefundSpikeAnomaly(merchantId);
         if (refundSpike) alerts.push(refundSpike);
 
-        // 3. Settlement Delay Detection
         const settlementDelay = await detectSettlementDelayAnomaly(merchantId);
         if (settlementDelay) alerts.push(settlementDelay);
 
-        // 4. Transaction Drop Detection
         const transactionDrop = await detectTransactionDropAnomaly(merchantId);
         if (transactionDrop) alerts.push(transactionDrop);
 
-        // 5. Credit Score Drop Detection
         const scoreDrop = await detectScoreDropAnomaly(merchantId);
         if (scoreDrop) alerts.push(scoreDrop);
 
-        // 6. Save alerts to database
         for (const alert of alerts) {
             await EarlyWarningAlert.create(alert);
         }
@@ -52,27 +47,29 @@ async function detectRevenueDropAnomaly(merchantId) {
     try {
         const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
+        // ✅ FIX: Op.gte bukan require("sequelize").gte
         const dailyRevenues = await DailyRevenue.findAll({
             where: {
                 merchantId,
-                transactionDate: { [require("sequelize").gte]: thirtyDaysAgo },
+                transactionDate: { [Op.gte]: thirtyDaysAgo },
             },
             order: [["transactionDate", "DESC"]],
             limit: 30,
+            raw: true,
         });
 
         if (dailyRevenues.length < 10) return null;
 
-        // Calculate average of past 20 days vs last 10 days
         const past20 = dailyRevenues.slice(10, 30);
         const last10 = dailyRevenues.slice(0, 10);
 
         const avgPast20 = past20.reduce((sum, r) => sum + parseFloat(r.totalAmount), 0) / past20.length;
         const avgLast10 = last10.reduce((sum, r) => sum + parseFloat(r.totalAmount), 0) / last10.length;
 
+        if (avgPast20 === 0) return null;
+
         const dropPercentage = ((avgPast20 - avgLast10) / avgPast20) * 100;
 
-        // Alert if revenue dropped more than 30%
         const REVENUE_DROP_THRESHOLD = 30;
         if (dropPercentage > REVENUE_DROP_THRESHOLD) {
             const severity = dropPercentage > 50 ? "Critical" : dropPercentage > 40 ? "Medium" : "Low";
@@ -93,6 +90,8 @@ async function detectRevenueDropAnomaly(merchantId) {
                 metricName: "Daily Revenue",
                 metricValue: avgLast10,
                 thresholdValue: avgPast20 * 0.7,
+                deviationPercentage: parseFloat(dropPercentage.toFixed(2)),
+                description: `Revenue rata-rata turun ${dropPercentage.toFixed(1)}% dalam 10 hari terakhir`,
                 detectedDate: new Date(),
                 qwenAnalysis: analysis,
                 isResolved: false,
@@ -112,22 +111,22 @@ async function detectRefundSpikeAnomaly(merchantId) {
     try {
         const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
+        // ✅ FIX: Op.gte
         const transactions = await Transaction.findAll({
             where: {
                 merchantId,
-                transactionDate: { [require("sequelize").gte]: thirtyDaysAgo },
+                transactionDate: { [Op.gte]: thirtyDaysAgo },
             },
+            attributes: ["refundStatus", "transactionDate"],
             raw: true,
         });
 
         if (transactions.length < 50) return null;
 
-        // Split into two periods
         const mid = Math.floor(transactions.length / 2);
         const past15 = transactions.slice(mid);
         const last15 = transactions.slice(0, mid);
 
-        // Calculate refund rates
         const pastRefunds = past15.filter((t) => t.refundStatus === "Processed").length;
         const lastRefunds = last15.filter((t) => t.refundStatus === "Processed").length;
 
@@ -136,7 +135,6 @@ async function detectRefundSpikeAnomaly(merchantId) {
 
         const spikePercentage = lastRefundRate - pastRefundRate;
 
-        // Alert if refund rate increased by more than 5%
         const REFUND_SPIKE_THRESHOLD = 5;
         if (spikePercentage > REFUND_SPIKE_THRESHOLD) {
             const severity = spikePercentage > 15 ? "Critical" : spikePercentage > 10 ? "Medium" : "Low";
@@ -155,8 +153,10 @@ async function detectRefundSpikeAnomaly(merchantId) {
                 alertType: "Refund Spike",
                 severity,
                 metricName: "Refund Rate (%)",
-                metricValue: lastRefundRate,
-                thresholdValue: pastRefundRate,
+                metricValue: parseFloat(lastRefundRate.toFixed(2)),
+                thresholdValue: parseFloat(pastRefundRate.toFixed(2)),
+                deviationPercentage: parseFloat(spikePercentage.toFixed(2)),
+                description: `Refund rate naik ${spikePercentage.toFixed(1)}% dibanding periode sebelumnya`,
                 detectedDate: new Date(),
                 qwenAnalysis: analysis,
                 isResolved: false,
@@ -176,28 +176,30 @@ async function detectSettlementDelayAnomaly(merchantId) {
     try {
         const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
+        // ✅ FIX: Op.gte + filter settlementDate NOT NULL agar tidak NaN
         const transactions = await Transaction.findAll({
             where: {
                 merchantId,
-                transactionDate: { [require("sequelize").gte]: thirtyDaysAgo },
+                transactionDate: { [Op.gte]: thirtyDaysAgo },
                 status: "Success",
+                settlementDate: { [Op.ne]: null }, // ✅ FIX: exclude null settlementDate
             },
+            attributes: ["transactionDate", "settlementDate"],
             raw: true,
         });
 
         if (transactions.length < 10) return null;
 
-        // Calculate settlement days
         const settlementDays = transactions.map((t) => {
             const settled = new Date(t.settlementDate);
             const transacted = new Date(t.transactionDate);
-            return (settled - transacted) / (1000 * 60 * 60 * 24);
+            const days = (settled - transacted) / (1000 * 60 * 60 * 24);
+            return isNaN(days) ? 0 : days; // ✅ FIX: guard NaN
         });
 
-        const avgSettlementDays = settlementDays.reduce((a, b) => a + b) / settlementDays.length;
+        const avgSettlementDays = settlementDays.reduce((a, b) => a + b, 0) / settlementDays.length;
         const maxSettlementDays = Math.max(...settlementDays);
 
-        // Alert if average settlement is more than 3 days
         const SETTLEMENT_THRESHOLD = 3;
         if (avgSettlementDays > SETTLEMENT_THRESHOLD) {
             const severity = maxSettlementDays > 7 ? "Critical" : avgSettlementDays > 5 ? "Medium" : "Low";
@@ -216,8 +218,10 @@ async function detectSettlementDelayAnomaly(merchantId) {
                 alertType: "Settlement Delay",
                 severity,
                 metricName: "Settlement Days",
-                metricValue: avgSettlementDays,
+                metricValue: parseFloat(avgSettlementDays.toFixed(1)),
                 thresholdValue: SETTLEMENT_THRESHOLD,
+                deviationPercentage: parseFloat((((avgSettlementDays - SETTLEMENT_THRESHOLD) / SETTLEMENT_THRESHOLD) * 100).toFixed(2)),
+                description: `Rata-rata waktu settlement ${avgSettlementDays.toFixed(1)} hari, melebihi threshold ${SETTLEMENT_THRESHOLD} hari`,
                 detectedDate: new Date(),
                 qwenAnalysis: analysis,
                 isResolved: false,
@@ -237,10 +241,11 @@ async function detectTransactionDropAnomaly(merchantId) {
     try {
         const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
+        // ✅ FIX: Op.gte
         const dailyRevenues = await DailyRevenue.findAll({
             where: {
                 merchantId,
-                transactionDate: { [require("sequelize").gte]: thirtyDaysAgo },
+                transactionDate: { [Op.gte]: thirtyDaysAgo },
             },
             order: [["transactionDate", "DESC"]],
             limit: 30,
@@ -249,16 +254,16 @@ async function detectTransactionDropAnomaly(merchantId) {
 
         if (dailyRevenues.length < 10) return null;
 
-        // Compare transaction counts
         const past20 = dailyRevenues.slice(10, 30);
         const last10 = dailyRevenues.slice(0, 10);
 
         const avgTransactionsPast20 = past20.reduce((sum, r) => sum + r.transactionCount, 0) / past20.length;
         const avgTransactionsLast10 = last10.reduce((sum, r) => sum + r.transactionCount, 0) / last10.length;
 
+        if (avgTransactionsPast20 === 0) return null;
+
         const dropPercentage = ((avgTransactionsPast20 - avgTransactionsLast10) / avgTransactionsPast20) * 100;
 
-        // Alert if transaction count dropped more than 25%
         const TRANSACTION_DROP_THRESHOLD = 25;
         if (dropPercentage > TRANSACTION_DROP_THRESHOLD) {
             const severity = dropPercentage > 50 ? "Critical" : dropPercentage > 40 ? "Medium" : "Low";
@@ -277,8 +282,10 @@ async function detectTransactionDropAnomaly(merchantId) {
                 alertType: "Transaction Drop",
                 severity,
                 metricName: "Transaction Count",
-                metricValue: avgTransactionsLast10,
-                thresholdValue: avgTransactionsPast20 * 0.75,
+                metricValue: parseFloat(avgTransactionsLast10.toFixed(2)),
+                thresholdValue: parseFloat((avgTransactionsPast20 * 0.75).toFixed(2)),
+                deviationPercentage: parseFloat(dropPercentage.toFixed(2)),
+                description: `Jumlah transaksi turun ${dropPercentage.toFixed(1)}% dalam 10 hari terakhir`,
                 detectedDate: new Date(),
                 qwenAnalysis: analysis,
                 isResolved: false,
@@ -310,7 +317,6 @@ async function detectScoreDropAnomaly(merchantId) {
 
         const scoreDrop = previousScore - latestScore;
 
-        // Alert if score dropped by more than 15 points
         const SCORE_DROP_THRESHOLD = 15;
         if (scoreDrop > SCORE_DROP_THRESHOLD) {
             const severity = scoreDrop > 30 ? "Critical" : scoreDrop > 20 ? "Medium" : "Low";
@@ -331,6 +337,8 @@ async function detectScoreDropAnomaly(merchantId) {
                 metricName: "Credit Score",
                 metricValue: latestScore,
                 thresholdValue: previousScore,
+                deviationPercentage: parseFloat(((scoreDrop / previousScore) * 100).toFixed(2)),
+                description: `Credit score turun ${scoreDrop} poin dari ${previousScore} menjadi ${latestScore}`,
                 detectedDate: new Date(),
                 qwenAnalysis: analysis,
                 isResolved: false,
@@ -346,7 +354,7 @@ async function detectScoreDropAnomaly(merchantId) {
 /**
  * Get active alerts for a merchant
  */
-export async function getActiveAlerts(merchantId, status = "Unresolved") {
+export async function getActiveAlerts(merchantId) {
     try {
         return await EarlyWarningAlert.findAll({
             where: {
@@ -364,9 +372,17 @@ export async function getActiveAlerts(merchantId, status = "Unresolved") {
 /**
  * Mark alert as resolved
  */
-export async function markAlertResolved(alertId) {
+export async function markAlertResolved(alertId, resolvedBy = "system") {
     try {
-        return await EarlyWarningAlert.update({ isResolved: true }, { where: { id: alertId } });
+        return await EarlyWarningAlert.update(
+            {
+                isResolved: true,
+                status: "Resolved",
+                resolvedDate: new Date(),
+                resolvedBy,
+            },
+            { where: { id: alertId } },
+        );
     } catch (error) {
         logger.error(`Mark Alert Resolved Error: ${error.message}`);
         return null;
