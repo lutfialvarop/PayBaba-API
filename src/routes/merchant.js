@@ -9,6 +9,7 @@ import EarlyWarningAlert from "../models/EarlyWarningAlert.js";
 import logger from "../utils/logger.js";
 import { generateScoreExplanation, generateLoanTiming, generateMerchantGrowthInsights } from "../services/qwenService.js";
 import { detectAnomalies, getActiveAlerts } from "../services/earlyWarningService.js";
+import { calculateMonthlyGrowth, calculateRefundRate } from "../services/merchantService.js";
 
 const router = express.Router();
 
@@ -126,6 +127,28 @@ router.get("/dashboard", authenticateToken, async (req, res, next) => {
             order: [["calculationDate", "DESC"]],
         });
 
+        const monthlyTransactionVolume =
+            (await DailyRevenue.sum("totalAmount", {
+                where: {
+                    merchantId: merchant.merchantId,
+                    transactionDate: {
+                        [Op.gte]: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+                    },
+                },
+            })) || 0;
+
+        const monthlyGrowth = await calculateMonthlyGrowth(merchant.merchantId); // Placeholder, will be calculated from revenue data
+        const refundRate = await calculateRefundRate(merchant.merchantId); // Placeholder, will be calculated from transactions
+        const totalTransactions = await DailyRevenue.count({
+            where: {
+                merchantId: merchant.merchantId,
+                transactionDate: {
+                    [Op.gte]: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+                },
+            },
+        });
+        const avgDailyTransaction = totalTransactions / 30; // Placeholder, will be calculated from transactions
+
         // For now, return mock data (will be replaced with real calculations)
         const dashboardData = {
             merchantId: merchant.merchantId,
@@ -134,11 +157,11 @@ router.get("/dashboard", authenticateToken, async (req, res, next) => {
             riskBand: latestScore?.riskBand || "N/A",
             estimatedMinLimit: latestScore?.estimatedMinLimit || 0,
             estimatedMaxLimit: latestScore?.estimatedMaxLimit || 0,
-            monthlyTransactionVolume: 0, // Will be calculated from transactions
-            monthlyGrowth: 0,
-            refundRate: 0,
-            totalTransactions: 0,
-            avgDailyTransaction: 0,
+            monthlyTransactionVolume: monthlyTransactionVolume, // Will be calculated from transactions
+            monthlyGrowth: monthlyGrowth,
+            refundRate: refundRate,
+            totalTransactions: totalTransactions,
+            avgDailyTransaction: avgDailyTransaction,
             scoreHistory: latestScore
                 ? [
                       {
@@ -230,6 +253,8 @@ router.get("/credit-detail", authenticateToken, async (req, res, next) => {
                 refundRatePercentage: latestScore.refundRatePercentage,
                 avgSettlementDays: latestScore.avgSettlementDays,
             });
+
+            console.log("AI Explanation Response:", aiResponse);
 
             explanation = aiResponse.explanation;
             recommendation = aiResponse.recommendation;

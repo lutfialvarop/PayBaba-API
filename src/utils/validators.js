@@ -53,15 +53,21 @@ export const createTransactionSchema = Joi.object({
     amount: Joi.number().positive().required(),
     description: Joi.string().max(200),
     productName: Joi.string().required(),
-    productInfo: Joi.array().items(
-        Joi.object({
-            id: Joi.string().required(),
-            name: Joi.string().required(),
-            price: Joi.number().positive().required(),
-            quantity: Joi.number().positive().integer().required(),
-            type: Joi.string(),
-        }),
-    ),
+
+    // Ubah bagian ini:
+    productInfo: Joi.array()
+        .items(
+            // Tetap array agar bisa banyak barang
+            Joi.object({
+                sku: Joi.string().required(), // Sesuaikan dengan JSON (sku)
+                name: Joi.string().required(),
+                category: Joi.string().optional(), // Sesuaikan dengan JSON (category)
+                quantity: Joi.number().positive().integer().required(),
+                unitPrice: Joi.number().positive().required(), // Sesuaikan dengan JSON (unitPrice)
+                details: Joi.string().optional(), // Tambahan field details
+            }),
+        )
+        .optional(), // Boleh optional jika tidak wajib
 });
 
 export const validateRequest = (schema) => {

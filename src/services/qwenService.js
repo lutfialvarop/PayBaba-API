@@ -112,10 +112,8 @@ Rules:
 
 Output MUST be valid JSON:
 {
-  "summary": "",
-  "strengths": [],
-  "risk_factors": [],
-  "improvement_suggestion": ""
+  "explanation": "",
+  "recommendation": ""
 }
 `;
 
