@@ -25,6 +25,7 @@ const corsOptions = {
                   "https://paybaba.id",
                   "https://www.paybaba.id",
                   process.env.FRONTEND_URL || "https://app.paybaba.id",
+                  "https://paybaba.vercel.app",
                   "http://localhost:5173", // Vite
                   "http://localhost:5174", // Vite
                   "*",
