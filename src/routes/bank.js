@@ -212,7 +212,8 @@ router.get("/merchants/all", async (req, res, next) => {
  *   post:
  *     summary: Search merchants by criteria
  *     description: Search merchants for loan partner banks with credit score filter
- *     tags: [Bank Portal]
+ *     tags:
+ *       - Bank Portal
  *     security:
  *       - BearerAuth: []
  *     requestBody:
@@ -250,11 +251,13 @@ router.get("/merchants/all", async (req, res, next) => {
  *             schema:
  *               type: object
  *               properties:
- *                 success: { type: boolean }
+ *                 success:
+ *                   type: boolean
  *                 data:
  *                   type: object
  *                   properties:
- *                     count: { type: integer }
+ *                     count:
+ *                       type: integer
  *                     merchants:
  *                       type: array
  *                       items:
@@ -266,7 +269,6 @@ router.post("/merchants/search", async (req, res, next) => {
     try {
         const { minCreditScore = 0, maxCreditScore = 100, riskBand = null, businessCategory = null, limit = 50, offset = 0 } = req.body;
 
-        // Build where condition for CreditScore
         const scoreWhere = {
             creditScore: {
                 [Op.between]: [minCreditScore, maxCreditScore],
@@ -308,7 +310,6 @@ router.post("/merchants/search", async (req, res, next) => {
             subQuery: false,
         });
 
-        // Enrich with score data
         const results = merchants.map((m) => {
             const score = scores.find((s) => s.merchantId === m.merchantId);
             return {
@@ -342,7 +343,8 @@ router.post("/merchants/search", async (req, res, next) => {
  *   get:
  *     summary: Get merchant detail
  *     description: Retrieve detailed merchant profile with credit and financial data
- *     tags: [Bank Portal]
+ *     tags:
+ *       - Bank Portal
  *     security:
  *       - BearerAuth: []
  *     parameters:
@@ -360,16 +362,23 @@ router.post("/merchants/search", async (req, res, next) => {
  *             schema:
  *               type: object
  *               properties:
- *                 success: { type: boolean }
+ *                 success:
+ *                   type: boolean
  *                 data:
  *                   type: object
  *                   properties:
- *                     merchantId: { type: string }
- *                     companyName: { type: string }
- *                     creditScore: { type: integer }
- *                     riskBand: { type: string }
- *                     financialMetrics: { type: object }
- *                     loanEligibility: { type: object }
+ *                     merchantId:
+ *                       type: string
+ *                     companyName:
+ *                       type: string
+ *                     creditScore:
+ *                       type: integer
+ *                     riskBand:
+ *                       type: string
+ *                     financialMetrics:
+ *                       type: object
+ *                     loanEligibility:
+ *                       type: object
  *       401:
  *         description: Invalid API Key
  *       404:
@@ -392,7 +401,6 @@ router.get("/merchants/:merchantId", async (req, res, next) => {
             });
         }
 
-        // Get latest credit score
         const scores = await CreditScore.findAll({
             where: { merchantId },
             order: [["calculationDate", "DESC"]],
@@ -402,7 +410,6 @@ router.get("/merchants/:merchantId", async (req, res, next) => {
 
         const latestScore = scores[0];
 
-        // Get revenue metrics
         const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
         const revenues = await DailyRevenue.findAll({
             where: {
@@ -415,7 +422,6 @@ router.get("/merchants/:merchantId", async (req, res, next) => {
         const totalRevenue30d = revenues.reduce((sum, r) => sum + parseFloat(r.totalAmount), 0);
         const totalTransactions30d = revenues.reduce((sum, r) => sum + r.transactionCount, 0);
 
-        // Get active alerts
         const activeAlerts = await EarlyWarningAlert.findAll({
             where: { merchantId, isResolved: false },
             raw: true,
@@ -469,13 +475,23 @@ router.get("/merchants/:merchantId", async (req, res, next) => {
     }
 });
 
+/* =====================================================
+   LOAN APPLICATIONS
+   Hanya bank yang bisa membuat loan application.
+   Merchant tidak bisa request pinjaman sendiri.
+===================================================== */
+
 /**
  * @swagger
  * /api/bank/loan-applications:
  *   post:
- *     summary: Create or update loan application
- *     description: Bank-initiated loan application creation
- *     tags: [Bank Portal]
+ *     summary: Create loan application (Bank only)
+ *     description: |
+ *       Bank membuat loan application untuk merchant yang telah diseleksi.
+ *       Merchant tidak dapat membuat loan application sendiri.
+ *       Credit score dan risk band saat pengajuan akan otomatis diambil dari data terkini.
+ *     tags:
+ *       - Bank Portal
  *     security:
  *       - BearerAuth: []
  *     requestBody:
@@ -484,7 +500,10 @@ router.get("/merchants/:merchantId", async (req, res, next) => {
  *         application/json:
  *           schema:
  *             type: object
- *             required: [merchantId, requestedAmount]
+ *             required:
+ *               - merchantId
+ *               - amount
+ *               - tenor
  *             properties:
  *               merchantId:
  *                 type: string
@@ -492,36 +511,102 @@ router.get("/merchants/:merchantId", async (req, res, next) => {
  *               bankId:
  *                 type: string
  *                 example: BANK001
- *               requestedAmount:
+ *               amount:
  *                 type: number
+ *                 description: Requested loan amount in IDR
  *                 example: 500000000
+ *               tenor:
+ *                 type: integer
+ *                 description: Loan tenor in months
+ *                 example: 12
+ *               status:
+ *                 type: string
+ *                 enum: [Draft, Submitted, Under Review, Approved, Rejected, Disbursed]
+ *                 default: Draft
+ *               purpose:
+ *                 type: string
+ *                 example: Modal kerja tambahan
  *               recommendedAmount:
  *                 type: number
- *               recommendedTenor:
- *                 type: integer
- *                 example: 12
- *               bankDecision:
- *                 type: string
- *                 enum: [Pending, Approved, Rejected]
+ *                 example: 450000000
+ *               interestRate:
+ *                 type: number
+ *                 description: Interest rate in percentage
+ *                 example: 9.5
+ *           example:
+ *             merchantId: MRC123456
+ *             bankId: BANK001
+ *             amount: 500000000
+ *             tenor: 12
+ *             status: Draft
  *     responses:
  *       201:
- *         description: Application created
+ *         description: Loan application created successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 success: { type: boolean }
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Loan application berhasil dibuat
  *                 data:
  *                   type: object
+ *                   properties:
+ *                     applicationId:
+ *                       type: string
+ *                       example: APP-MRC123456-BANK001-1719999999999
+ *                     merchantId:
+ *                       type: string
+ *                       example: MRC123456
+ *                     bankId:
+ *                       type: string
+ *                       example: BANK001
+ *                     amount:
+ *                       type: number
+ *                       example: 500000000
+ *                     tenor:
+ *                       type: integer
+ *                       example: 12
+ *                     status:
+ *                       type: string
+ *                       example: Draft
+ *                     creditScoreAtApplication:
+ *                       type: integer
+ *                       example: 82
+ *                     riskBandAtApplication:
+ *                       type: string
+ *                       example: Low
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: false
+ *               message: merchantId, amount, dan tenor wajib diisi
  *       401:
- *         description: Invalid API Key
+ *         description: Unauthorized
  *       404:
  *         description: Merchant not found
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: false
+ *               message: Merchant tidak ditemukan
  */
 router.post("/loan-applications", async (req, res, next) => {
     try {
-        const { merchantId, bankId, applicationDate, requestedAmount, recommendedAmount, recommendedTenor, bankDecision, decisionDetails } = req.body;
+        const { merchantId, bankId, amount, tenor, status, purpose, recommendedAmount, interestRate } = req.body;
+
+        if (!merchantId || !amount || !tenor) {
+            return res.status(400).json({
+                success: false,
+                message: "merchantId, amount, dan tenor wajib diisi",
+            });
+        }
 
         // Verify merchant exists
         const merchant = await Merchant.findByPk(merchantId);
@@ -532,35 +617,42 @@ router.post("/loan-applications", async (req, res, next) => {
             });
         }
 
-        // Check if application already exists
-        const existingApp = await LoanApplication.findOne({
-            where: { merchantId, bankId },
-            order: [["applicationDate", "DESC"]],
+        // Ambil credit score terkini untuk disimpan sebagai snapshot
+        const latestScore = await CreditScore.findOne({
+            where: { merchantId },
+            order: [["calculationDate", "DESC"]],
+            raw: true,
         });
 
-        const applicationId = `APP-${merchantId}-${bankId}-${Date.now()}`;
+        const applicationId = `APP-${merchantId}-${bankId || "BANK"}-${Date.now()}`;
 
         const application = await LoanApplication.create({
             applicationId,
             merchantId,
             bankId: bankId || null,
-            applicationDate: applicationDate || new Date(),
-            requestedAmount,
-            recommendedAmount,
-            recommendedTenorMonths: recommendedTenor,
-            bankDecision: bankDecision || "Pending",
-            bankDecisionDetails: decisionDetails || null,
+            applicationDate: new Date(),
+            requestedAmount: amount,
+            recommendedAmount: recommendedAmount || null,
+            recommendedTenorMonths: tenor,
+            purpose: purpose || null,
+            status: status || "Draft",
+            creditScoreAtApplication: latestScore?.creditScore || null,
+            riskBandAtApplication: latestScore?.riskBand || null,
+            interestRate: interestRate || null,
         });
 
-        res.status(201).json({
+        return res.status(201).json({
             success: true,
-            message: "Aplikasi pinjaman dibuat/diupdate",
+            message: "Loan application berhasil dibuat",
             data: {
                 applicationId: application.applicationId,
-                merchantId,
-                status: application.bankDecision,
-                requestedAmount: application.requestedAmount,
-                recommendedAmount: application.recommendedAmount,
+                merchantId: application.merchantId,
+                bankId: application.bankId,
+                amount: application.requestedAmount,
+                tenor: application.recommendedTenorMonths,
+                status: application.status,
+                creditScoreAtApplication: application.creditScoreAtApplication,
+                riskBandAtApplication: application.riskBandAtApplication,
             },
         });
     } catch (error) {
@@ -573,9 +665,10 @@ router.post("/loan-applications", async (req, res, next) => {
  * @swagger
  * /api/bank/loan-applications/{merchantId}:
  *   get:
- *     summary: Get loan applications
- *     description: Retrieve loan applications for a merchant
- *     tags: [Bank Portal]
+ *     summary: Get loan applications by merchant
+ *     description: Retrieve all loan applications for a specific merchant
+ *     tags:
+ *       - Bank Portal
  *     security:
  *       - BearerAuth: []
  *     parameters:
@@ -593,15 +686,50 @@ router.post("/loan-applications", async (req, res, next) => {
  *             schema:
  *               type: object
  *               properties:
- *                 success: { type: boolean }
+ *                 success:
+ *                   type: boolean
  *                 data:
  *                   type: object
  *                   properties:
- *                     merchantId: { type: string }
+ *                     merchantId:
+ *                       type: string
  *                     applications:
  *                       type: array
  *                       items:
  *                         type: object
+ *                         properties:
+ *                           applicationId:
+ *                             type: string
+ *                           bankId:
+ *                             type: string
+ *                           appliedAt:
+ *                             type: string
+ *                             format: date-time
+ *                           amount:
+ *                             type: number
+ *                           tenor:
+ *                             type: integer
+ *                           status:
+ *                             type: string
+ *                             enum: [Draft, Submitted, Under Review, Approved, Rejected, Disbursed]
+ *                           creditScoreAtApplication:
+ *                             type: integer
+ *                           riskBandAtApplication:
+ *                             type: string
+ *                           purpose:
+ *                             type: string
+ *                           interestRate:
+ *                             type: number
+ *                           bankDecisionNotes:
+ *                             type: string
+ *                           bankDecisionDate:
+ *                             type: string
+ *                             format: date-time
+ *                           disbursedAmount:
+ *                             type: number
+ *                           disbursedDate:
+ *                             type: string
+ *                             format: date-time
  *       401:
  *         description: Invalid API Key
  */
@@ -621,12 +749,20 @@ router.get("/loan-applications/:merchantId", async (req, res, next) => {
                 merchantId,
                 applications: applications.map((a) => ({
                     applicationId: a.applicationId,
+                    bankId: a.bankId,
                     appliedAt: a.applicationDate,
-                    requestedAmount: a.requestedAmount,
+                    amount: a.requestedAmount,
                     recommendedAmount: a.recommendedAmount,
-                    status: a.bankDecision,
                     tenor: a.recommendedTenorMonths,
-                    details: a.bankDecisionDetails,
+                    status: a.status,
+                    creditScoreAtApplication: a.creditScoreAtApplication,
+                    riskBandAtApplication: a.riskBandAtApplication,
+                    purpose: a.purpose,
+                    interestRate: a.interestRate,
+                    bankDecisionNotes: a.bankDecisionNotes,
+                    bankDecisionDate: a.bankDecisionDate,
+                    disbursedAmount: a.disbursedAmount,
+                    disbursedDate: a.disbursedDate,
                 })),
             },
         });
@@ -642,7 +778,8 @@ router.get("/loan-applications/:merchantId", async (req, res, next) => {
  *   get:
  *     summary: Get merchant risk alerts
  *     description: Retrieve all risk alerts for a merchant for risk assessment
- *     tags: [Bank Portal]
+ *     tags:
+ *       - Bank Portal
  *     security:
  *       - BearerAuth: []
  *     parameters:
@@ -665,16 +802,20 @@ router.get("/loan-applications/:merchantId", async (req, res, next) => {
  *             schema:
  *               type: object
  *               properties:
- *                 success: { type: boolean }
+ *                 success:
+ *                   type: boolean
  *                 data:
  *                   type: object
  *                   properties:
- *                     merchantId: { type: string }
+ *                     merchantId:
+ *                       type: string
  *                     summary:
  *                       type: object
  *                       properties:
- *                         total: { type: integer }
- *                         critical: { type: integer }
+ *                         total:
+ *                           type: integer
+ *                         critical:
+ *                           type: integer
  *                     alerts:
  *                       type: array
  *       401:
@@ -735,7 +876,8 @@ router.get("/alerts/:merchantId", async (req, res, next) => {
  *   post:
  *     summary: Batch merchant assessment
  *     description: Assess multiple merchants for portfolio analysis
- *     tags: [Bank Portal]
+ *     tags:
+ *       - Bank Portal
  *     security:
  *       - BearerAuth: []
  *     requestBody:
@@ -744,7 +886,8 @@ router.get("/alerts/:merchantId", async (req, res, next) => {
  *         application/json:
  *           schema:
  *             type: object
- *             required: [merchantIds]
+ *             required:
+ *               - merchantIds
  *             properties:
  *               merchantIds:
  *                 type: array
@@ -759,19 +902,27 @@ router.get("/alerts/:merchantId", async (req, res, next) => {
  *             schema:
  *               type: object
  *               properties:
- *                 success: { type: boolean }
+ *                 success:
+ *                   type: boolean
  *                 data:
  *                   type: object
  *                   properties:
- *                     totalMerchants: { type: integer }
- *                     assessmentDate: { type: string, format: date-time }
+ *                     totalMerchants:
+ *                       type: integer
+ *                     assessmentDate:
+ *                       type: string
+ *                       format: date-time
  *                     summary:
  *                       type: object
  *                       properties:
- *                         avgCreditScore: { type: number }
- *                         highRisk: { type: integer }
- *                         mediumRisk: { type: integer }
- *                         lowRisk: { type: integer }
+ *                         avgCreditScore:
+ *                           type: number
+ *                         highRisk:
+ *                           type: integer
+ *                         mediumRisk:
+ *                           type: integer
+ *                         lowRisk:
+ *                           type: integer
  *                     details:
  *                       type: array
  *       400:
@@ -798,7 +949,6 @@ router.post("/batch-assessment", async (req, res, next) => {
             raw: true,
         });
 
-        // Get latest score per merchant
         const latestScores = new Map();
         scores.forEach((score) => {
             if (!latestScores.has(score.merchantId)) {
