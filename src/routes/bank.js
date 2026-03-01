@@ -19,6 +19,176 @@ router.use(authenticateToken);
 
 /**
  * @swagger
+ * /api/bank/merchants/all:
+ *   get:
+ *     summary: Get all merchants with credit score
+ *     description: |
+ *       Retrieve a paginated list of all merchants sorted by credit score (descending).
+ *       Intended for bank portal use to browse and evaluate merchant creditworthiness.
+ *     tags:
+ *       - Bank Portal
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *         description: Maximum number of merchants to return
+ *         example: 50
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *         description: Number of records to skip for pagination
+ *         example: 0
+ *     responses:
+ *       200:
+ *         description: Merchants retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     count:
+ *                       type: integer
+ *                       description: Number of merchants returned
+ *                       example: 10
+ *                     merchants:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           merchantId:
+ *                             type: string
+ *                             example: MRC123456
+ *                           companyName:
+ *                             type: string
+ *                             example: PT Toko Maju Jaya
+ *                           city:
+ *                             type: string
+ *                             example: Jakarta
+ *                           businessCategory:
+ *                             type: string
+ *                             example: Retail
+ *                           businessScale:
+ *                             type: string
+ *                             enum: [Micro, Small, Medium, Large]
+ *                             example: Small
+ *                           creditScore:
+ *                             type: integer
+ *                             description: Credit score 0–100
+ *                             example: 82
+ *                           riskBand:
+ *                             type: string
+ *                             enum: [Low, Medium, High]
+ *                             example: Low
+ *                           estimatedMaxLimit:
+ *                             type: number
+ *                             description: Estimated maximum loan limit in IDR
+ *                             example: 500000000
+ *             example:
+ *               success: true
+ *               data:
+ *                 count: 2
+ *                 merchants:
+ *                   - merchantId: MRC123456
+ *                     companyName: PT Toko Maju Jaya
+ *                     city: Jakarta
+ *                     businessCategory: Retail
+ *                     businessScale: Small
+ *                     creditScore: 82
+ *                     riskBand: Low
+ *                     estimatedMaxLimit: 500000000
+ *                   - merchantId: MRC789012
+ *                     companyName: CV Berkah Bersama
+ *                     city: Surabaya
+ *                     businessCategory: F&B
+ *                     businessScale: Micro
+ *                     creditScore: 65
+ *                     riskBand: Medium
+ *                     estimatedMaxLimit: 150000000
+ *       401:
+ *         description: Unauthorized – token missing or invalid
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: false
+ *               message: Unauthorized
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: false
+ *               message: Internal Server Error
+ */
+router.get("/merchants/all", async (req, res, next) => {
+    try {
+        // name merchant, category, monthly rev, risk, score, category
+        // fe use pagination and sort by score desc
+        const { limit = 50, offset = 0 } = req.query;
+
+        const scores = await CreditScore.findAll({
+            order: [["creditScore", "DESC"]],
+            limit,
+            offset,
+            raw: true,
+        });
+
+        const merchantIds = scores.map((s) => s.merchantId);
+
+        const merchants = await Merchant.findAll({
+            where: { merchantId: { [Op.in]: merchantIds } },
+            attributes: ["merchantId", "businessCategory", "businessScale", "joinDate"],
+            include: [
+                {
+                    model: User,
+                    attributes: ["email", "companyName", "city"],
+                },
+            ],
+            raw: true,
+            subQuery: false,
+        });
+
+        // Enrich with score data
+        const results = merchants.map((m) => {
+            const score = scores.find((s) => s.merchantId === m.merchantId);
+            return {
+                merchantId: m.merchantId,
+                companyName: m["User.companyName"],
+                city: m["User.city"],
+                businessCategory: m.businessCategory,
+                businessScale: m.businessScale,
+                creditScore: score?.creditScore,
+                riskBand: score?.riskBand,
+                estimatedMaxLimit: score?.estimatedMaxLimit,
+            };
+        });
+
+        res.json({
+            success: true,
+            data: {
+                count: results.length,
+                merchants: results,
+            },
+        });
+    } catch (error) {
+        logger.error(`Get all merchants error: ${error.message}`);
+        next(error);
+    }
+});
+
+/**
+ * @swagger
  * /api/bank/merchants/search:
  *   post:
  *     summary: Search merchants by criteria
