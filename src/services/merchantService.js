@@ -46,6 +46,50 @@ export const getMerchantProductStats = async (merchantId) => {
     };
 };
 
+export const calculateRefundRate = async (merchantId) => {
+    const threeMonthsAgo = new Date();
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+
+    const transactions = await Transaction.findAll({
+        where: {
+            merchantId,
+            transactionDate: { [Op.gte]: threeMonthsAgo },
+        },
+        attributes: ["status"],
+        raw: true,
+    });
+
+    const total = transactions.length;
+    const refunded = transactions.filter((t) => t.status === "Refunded").length;
+
+    return total > 0 ? (refunded / total) * 100 : 0;
+};
+
+export const calculateMonthlyGrowth = async (merchantId) => {
+    const totalRevenue = await Transaction.sum("amount", {
+        where: {
+            merchantId,
+            status: "Success",
+        },
+    });
+
+    const threeMonthsAgo = new Date();
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+
+    const pastRevenue = await Transaction.sum("amount", {
+        where: {
+            merchantId,
+            status: "Success",
+            transactionDate: { [Op.gte]: threeMonthsAgo },
+        },
+    });
+
+    if (pastRevenue === 0) return totalRevenue > 0 ? 100 : 0;
+    return ((totalRevenue - pastRevenue) / pastRevenue) * 100;
+};
+
 export default {
     getMerchantProductStats,
+    calculateRefundRate,
+    calculateMonthlyGrowth,
 };
