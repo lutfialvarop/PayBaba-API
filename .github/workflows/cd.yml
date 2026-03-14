@@ -160,12 +160,12 @@ jobs:
                       --env JWT_ACCESS_TOKEN_EXPIRY="${{ secrets.JWT_ACCESS_TOKEN_EXPIRY }}" \
                       --env JWT_REFRESH_TOKEN_EXPIRY="${{ secrets.JWT_REFRESH_TOKEN_EXPIRY }}" \
                       --env QWEN_API_KEY="${{ secrets.QWEN_API_KEY }}" \
-                      --env-add QWEN_BASE_URL="${{ secrets.QWEN_BASE_URL }}" \
+                      --env QWEN_BASE_URL="${{ secrets.QWEN_BASE_URL }}" \
                       --env MID="${{ secrets.MID }}" \
                       --env PRIVATE_KEY="${{ secrets.PRIVATE_KEY }}" \
                       --env PUBLIC_KEY="${{ secrets.PUBLIC_KEY }}" \
                       --env PAYLABS_SERVER="${{ secrets.PAYLABS_SERVER }}" \
-                      --env-add PAYLABS_BASE_URL="${{ secrets.PAYLABS_BASE_URL }}" \
+                      --env PAYLABS_BASE_URL="${{ secrets.PAYLABS_BASE_URL }}" \
                       --env NOTIFY_URL="${{ secrets.NOTIFY_URL }}" \
                       $IMAGE
                   fi
