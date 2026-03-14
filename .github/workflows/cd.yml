@@ -141,7 +141,6 @@ jobs:
                       --replicas 2 \
                       --network app-network \
                       --with-registry-auth \
-                      --constraint "node.labels.role != database" \
                       --label "traefik.enable=true" \
                       --label "traefik.http.routers.paybaba.rule=Host(\`$DOMAIN\`)" \
                       --label "traefik.http.routers.paybaba.entrypoints=websecure" \
