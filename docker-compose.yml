@@ -7,7 +7,8 @@ services:
         restart: always
         environment:
             NODE_ENV: production
-            DB_HOST: postgres_db
+            # Biarkan dia membaca variabel dari file .env
+            DB_HOST: ${DB_HOST}
             DB_PORT: 5432
             DB_NAME: ${DB_NAME}
             DB_USER: ${DB_USER}
@@ -33,5 +34,5 @@ services:
 
 networks:
     paybaba_network:
-        name: paybaba_network # Mengunci nama jaringan virtual
+        name: paybaba_network
         driver: bridge
