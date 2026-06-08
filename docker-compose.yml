@@ -29,7 +29,7 @@ services:
             NOTIFY_URL: ${NOTIFY_URL}
         ports:
             # Terkoneksi ke Nginx di server
-            - "127.0.0.1:3000:3000"
+            - "127.0.0.1:3001:3000"
         extra_hosts:
             - "host.docker.internal:host-gateway" # WAJIB: Membuka jembatan ke IP server
         networks:
