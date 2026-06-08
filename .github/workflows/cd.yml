@@ -107,12 +107,14 @@ jobs:
                   echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
                   echo "📝 Generating .env file on server..."
+                  POSTGRES_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' postgres_db)
+
                   # Membuat file .env untuk dibaca oleh docker-compose.yml
                   cat <<EOT > .env
-                  NODE_ENV=development
+                  NODE_ENV=production
                   IMAGE_TAG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
                   # Menggunakan host.docker.internal karena Postgres ada di server utama
-                  DB_HOST=host.docker.internal
+                  DB_HOST=$POSTGRES_IP
                   DB_PORT=5432
                   DB_NAME=${{ secrets.DB_NAME }}
                   DB_USER=${{ secrets.DB_USER }}
