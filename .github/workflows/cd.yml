@@ -1,4 +1,4 @@
-name: CD - Build & Deploy to Swarm
+name: CD - Build & Deploy to Single Server
 
 on:
     push:
@@ -56,29 +56,32 @@ jobs:
                   cache-to: type=gha,mode=max
 
     # ═══════════════════════════════════════════════════════════
-    # 2. DEPLOY TO SWARM
+    # 2. DEPLOY VIA DOCKER COMPOSE
     # ═══════════════════════════════════════════════════════════
     deploy:
-        name: Update Swarm Service
+        name: Update Server
         needs: build # Wajib nunggu build selesai
         runs-on: ubuntu-latest
 
         steps:
+            # Wajib checkout kode agar bisa mengambil file docker-compose.yml lokal
+            - uses: actions/checkout@v4
+
             - name: Setup SSH key
               run: |
                   mkdir -p ~/.ssh
 
-                  # 1. Decode Base64 ke file (Menggunakan printf agar lebih aman)
-                  printf "%s" "${{ secrets.SWARM_MASTER_SSH_KEY }}" | base64 -d > ~/.ssh/swarm_key
+                  # 1. Decode Base64 ke file
+                  printf "%s" "${{ secrets.SWARM_MASTER_SSH_KEY }}" | base64 -d > ~/.ssh/server_key
 
-                  # 2. [PENTING] Tambahkan baris baru di akhir file (Obat error libcrypto)
-                  echo "" >> ~/.ssh/swarm_key
+                  # 2. Tambahkan baris baru di akhir file
+                  echo "" >> ~/.ssh/server_key
 
-                  # 3. Atur permission (Wajib 600)
-                  chmod 600 ~/.ssh/swarm_key
+                  # 3. Atur permission
+                  chmod 600 ~/.ssh/server_key
 
-                  # 4. Validasi (Cek apakah depannya benar format Key, tanpa menampilkan isinya)
-                  if head -n 1 ~/.ssh/swarm_key | grep -q "BEGIN"; then
+                  # 4. Validasi
+                  if head -n 1 ~/.ssh/server_key | grep -q "BEGIN"; then
                     echo "✅ SSH Key format looks correct (Header found)."
                   else
                     echo "❌ Error: Decoded key does not look like a valid PEM key."
@@ -88,95 +91,62 @@ jobs:
                   # 5. Scan host
                   ssh-keyscan -H ${{ env.SWARM_MASTER_HOST }} >> ~/.ssh/known_hosts
 
+            # Langkah baru: Copy file docker-compose.yml dari repo ke dalam server
+            - name: Copy docker-compose.yml to Server
+              run: |
+                  scp -i ~/.ssh/server_key docker-compose.yml ${{ env.SWARM_MASTER_USER }}@${{ env.SWARM_MASTER_HOST }}:~/docker-compose.yml
+
             - name: Execute Remote Deployment
               run: |
-                  ssh -i ~/.ssh/swarm_key ${{ env.SWARM_MASTER_USER }}@${{ env.SWARM_MASTER_HOST }} << 'EOF'
+                  ssh -i ~/.ssh/server_key ${{ env.SWARM_MASTER_USER }}@${{ env.SWARM_MASTER_HOST }} << 'EOF'
                   set -e
 
-                  # === CONFIGURATION ===
-                  SERVICE_NAME="paybaba-api"
-                  IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
-                  DOMAIN="${{ env.APP_DOMAIN }}"
-
-                  echo "🚀 Starting Deployment for $SERVICE_NAME"
+                  echo "🚀 Starting Deployment for paybaba-api"
 
                   # Login Docker
                   echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
-                  # Cek apakah service sudah ada
-                  if docker service ls --format '{{.Name}}' | grep -q "^$SERVICE_NAME$"; then
-                    echo "♻️  Updating existing service..."
-                    
-                    # Update service dengan image baru dan env vars baru
-                    # Perhatikan penggunaan backslash (\) di akhir baris harus bersih tanpa spasi
-                    docker service update \
-                      --image $IMAGE \
-                      --with-registry-auth \
-                      --force \
-                      --env-add NODE_ENV=production \
-                      --env-add BASE_URL="${{ secrets.BASE_URL }}" \
-                      --env-add FRONTEND_URL="${{ secrets.FRONTEND_URL }}" \
-                      --env-add DB_HOST=my-postgres \
-                      --env-add DB_PORT=5432 \
-                      --env-add DB_NAME="${{ secrets.DB_NAME }}" \
-                      --env-add DB_USER="${{ secrets.DB_USER }}" \
-                      --env-add DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
-                      --env-add JWT_ACCESS_TOKEN_SECRET="${{ secrets.JWT_ACCESS_TOKEN_SECRET }}" \
-                      --env-add JWT_REFRESH_TOKEN_SECRET="${{ secrets.JWT_REFRESH_TOKEN_SECRET }}" \
-                      --env-add JWT_ACCESS_TOKEN_EXPIRY="${{ secrets.JWT_ACCESS_TOKEN_EXPIRY }}" \
-                      --env-add JWT_REFRESH_TOKEN_EXPIRY="${{ secrets.JWT_REFRESH_TOKEN_EXPIRY }}" \
-                      --env-add QWEN_API_KEY="${{ secrets.QWEN_API_KEY }}" \
-                      --env-add QWEN_BASE_URL="${{ secrets.QWEN_BASE_URL }}" \
-                      --env-add MID="${{ secrets.MID }}" \
-                      --env-add PRIVATE_KEY="${{ secrets.PRIVATE_KEY }}" \
-                      --env-add PUBLIC_KEY="${{ secrets.PUBLIC_KEY }}" \
-                      --env-add PAYLABS_SERVER="${{ secrets.PAYLABS_SERVER }}" \
-                      --env-add PAYLABS_BASE_URL="${{ secrets.PAYLABS_BASE_URL }}" \
-                      --env-add NOTIFY_URL="${{ secrets.NOTIFY_URL }}" \
-                      $SERVICE_NAME
-                  else
-                    echo "✨ Creating new service..."
-                    docker service create \
-                      --name $SERVICE_NAME \
-                      --replicas 2 \
-                      --network app-network \
-                      --with-registry-auth \
-                      --label "traefik.enable=true" \
-                      --label "traefik.http.routers.paybaba.rule=Host(\`$DOMAIN\`)" \
-                      --label "traefik.http.routers.paybaba.entrypoints=websecure" \
-                      --label "traefik.http.routers.paybaba.tls.certresolver=myresolver" \
-                      --label "traefik.http.services.paybaba.loadbalancer.server.port=3000" \
-                      --env NODE_ENV=production \
-                      --env BASE_URL="${{ secrets.BASE_URL }}" \
-                      --env FRONTEND_URL="${{ secrets.FRONTEND_URL }}" \
-                      --env DB_HOST=my-postgres \
-                      --env DB_PORT=5432 \
-                      --env DB_NAME="${{ secrets.DB_NAME }}" \
-                      --env DB_USER="${{ secrets.DB_USER }}" \
-                      --env DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
-                      --env JWT_ACCESS_TOKEN_SECRET="${{ secrets.JWT_ACCESS_TOKEN_SECRET }}" \
-                      --env JWT_REFRESH_TOKEN_SECRET="${{ secrets.JWT_REFRESH_TOKEN_SECRET }}" \
-                      --env JWT_ACCESS_TOKEN_EXPIRY="${{ secrets.JWT_ACCESS_TOKEN_EXPIRY }}" \
-                      --env JWT_REFRESH_TOKEN_EXPIRY="${{ secrets.JWT_REFRESH_TOKEN_EXPIRY }}" \
-                      --env QWEN_API_KEY="${{ secrets.QWEN_API_KEY }}" \
-                      --env QWEN_BASE_URL="${{ secrets.QWEN_BASE_URL }}" \
-                      --env MID="${{ secrets.MID }}" \
-                      --env PRIVATE_KEY="${{ secrets.PRIVATE_KEY }}" \
-                      --env PUBLIC_KEY="${{ secrets.PUBLIC_KEY }}" \
-                      --env PAYLABS_SERVER="${{ secrets.PAYLABS_SERVER }}" \
-                      --env PAYLABS_BASE_URL="${{ secrets.PAYLABS_BASE_URL }}" \
-                      --env NOTIFY_URL="${{ secrets.NOTIFY_URL }}" \
-                      $IMAGE
-                  fi
+                  echo "📝 Generating .env file on server..."
+                  # Membuat file .env untuk dibaca oleh docker-compose.yml
+                  cat <<EOT > .env
+                  NODE_ENV=production
+                  IMAGE_TAG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+                  # Menggunakan host.docker.internal karena Postgres ada di server utama
+                  DB_HOST=host.docker.internal
+                  DB_PORT=5432
+                  DB_NAME=${{ secrets.DB_NAME }}
+                  DB_USER=${{ secrets.DB_USER }}
+                  DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+                  BASE_URL=${{ secrets.BASE_URL }}
+                  FRONTEND_URL=${{ secrets.FRONTEND_URL }}
+                  JWT_ACCESS_TOKEN_SECRET=${{ secrets.JWT_ACCESS_TOKEN_SECRET }}
+                  JWT_REFRESH_TOKEN_SECRET=${{ secrets.JWT_REFRESH_TOKEN_SECRET }}
+                  JWT_ACCESS_TOKEN_EXPIRY=${{ secrets.JWT_ACCESS_TOKEN_EXPIRY }}
+                  JWT_REFRESH_TOKEN_EXPIRY=${{ secrets.JWT_REFRESH_TOKEN_EXPIRY }}
+                  QWEN_API_KEY=${{ secrets.QWEN_API_KEY }}
+                  QWEN_BASE_URL=${{ secrets.QWEN_BASE_URL }}
+                  MID=${{ secrets.MID }}
+                  PRIVATE_KEY="${{ secrets.PRIVATE_KEY }}"
+                  PUBLIC_KEY="${{ secrets.PUBLIC_KEY }}"
+                  PAYLABS_SERVER=${{ secrets.PAYLABS_SERVER }}
+                  PAYLABS_BASE_URL=${{ secrets.PAYLABS_BASE_URL }}
+                  NOTIFY_URL=${{ secrets.NOTIFY_URL }}
+                  APP_DOMAIN=${{ env.APP_DOMAIN }}
+                  EOT
 
-                  echo "✅ Deployment command sent. Verifying..."
-                  sleep 5
-                  docker service ps $SERVICE_NAME --no-trunc | head -n 5
+                  echo "♻️ Pulling latest image and recreating containers..."
+                  docker compose pull
+                  docker compose up -d --remove-orphans
+
+                  echo "🧹 Cleaning up old unused images..."
+                  docker image prune -f
+
+                  echo "✅ Deployment commands executed successfully."
                   EOF
 
             - name: Cleanup Key
               if: always()
-              run: rm -f ~/.ssh/swarm_key
+              run: rm -f ~/.ssh/server_key
 
     # ═══════════════════════════════════════════════════════════
     # 3. HEALTH CHECK
@@ -188,7 +158,7 @@ jobs:
         steps:
             - name: Check URL
               run: |
-                  echo "Waiting for Traefik routing..."
+                  echo "Waiting for Nginx routing and App initialization..."
                   for i in {1..10}; do
                     # -k untuk bypass SSL check (jika baru renew)
                     STATUS=$(curl -k -s -o /dev/null -w "%{http_code}" https://${{ env.APP_DOMAIN }}/health)
@@ -196,7 +166,7 @@ jobs:
                       echo "✅ Health check PASSED (200 OK)"
                       exit 0
                     fi
-                    echo "Attempt $i: Got status $STATUS. Retrying..."
+                    echo "Attempt $i: Got status $STATUS. Retrying in 10s..."
                     sleep 10
                   done
                   echo "❌ Health check FAILED"
