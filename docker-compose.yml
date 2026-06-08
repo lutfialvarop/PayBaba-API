@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
     api:
         image: ${IMAGE_TAG}
@@ -7,8 +5,7 @@ services:
         restart: always
         environment:
             NODE_ENV: production
-            # Gunakan host.docker.internal untuk mengakses Postgres di server lokal
-            DB_HOST: host.docker.internal
+            DB_HOST: postgres_db
             DB_PORT: 5432
             DB_NAME: ${DB_NAME}
             DB_USER: ${DB_USER}
@@ -28,13 +25,11 @@ services:
             PAYLABS_BASE_URL: ${PAYLABS_BASE_URL}
             NOTIFY_URL: ${NOTIFY_URL}
         ports:
-            # Terkoneksi ke Nginx di server
             - "127.0.0.1:3001:3000"
-        extra_hosts:
-            - "host.docker.internal:host-gateway" # WAJIB: Membuka jembatan ke IP server
         networks:
             - paybaba_network
 
 networks:
     paybaba_network:
+        name: paybaba_network # Mengunci nama jaringan virtual
         driver: bridge
