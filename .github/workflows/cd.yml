@@ -109,7 +109,7 @@ jobs:
                   echo "📝 Generating .env file on server..."
                   # Membuat file .env untuk dibaca oleh docker-compose.yml
                   cat <<EOT > .env
-                  NODE_ENV=production
+                  NODE_ENV=development
                   IMAGE_TAG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
                   # Menggunakan host.docker.internal karena Postgres ada di server utama
                   DB_HOST=host.docker.internal
