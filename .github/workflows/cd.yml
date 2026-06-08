@@ -106,15 +106,16 @@ jobs:
                   # Login Docker
                   echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
-                  echo "📝 Generating .env file on server..."
-                  POSTGRES_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' postgres_db)
+                  echo "🌐 Connecting existing postgres_db to the application network..."
+                  # Buat network jika belum ada, lalu masukkan postgres_db ke dalamnya
+                  docker network create paybaba_network || true
+                  docker network connect paybaba_network postgres_db || true
 
-                  # Membuat file .env untuk dibaca oleh docker-compose.yml
+                  echo "📝 Generating .env file on server..."
                   cat <<EOT > .env
                   NODE_ENV=production
                   IMAGE_TAG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-                  # Menggunakan host.docker.internal karena Postgres ada di server utama
-                  DB_HOST=$POSTGRES_IP
+                  DB_HOST=postgres_db
                   DB_PORT=5432
                   DB_NAME=${{ secrets.DB_NAME }}
                   DB_USER=${{ secrets.DB_USER }}
